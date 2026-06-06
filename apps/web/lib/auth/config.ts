@@ -153,6 +153,7 @@ export const auth = betterAuth({
       clientId: process.env.NEXT_PUBLIC_VERCEL_APP_CLIENT_ID ?? "",
       clientSecret: process.env.VERCEL_APP_CLIENT_SECRET ?? "",
       scope: ["openid", "email", "profile", "offline_access"],
+      redirectURI: "https://neptune-v2.vercel.app/api/auth/callback/vercel",
       overrideUserInfoOnSignIn: true,
       mapProfileToUser: mapVercelProfileToUser,
     },
