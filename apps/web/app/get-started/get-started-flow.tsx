@@ -19,7 +19,7 @@ function OpenAgentsLogo({ className }: { className?: string }) {
       viewBox="0 0 24 24"
       fill="none"
       className={className}
-      aria-label="Open Agents"
+      aria-label="Neptune Code"
     >
       <path
         d="M4 17L10 11L4 5"
@@ -93,11 +93,11 @@ export function GetStartedFlow() {
         <div className="flex items-center gap-3">
           <OpenAgentsLogo className="size-7 text-white/50" />
           <span className="text-lg font-semibold tracking-tight text-white/50">
-            Open Agents
+            Neptune Code
           </span>
         </div>
         <p className="hidden max-w-sm text-sm leading-relaxed text-zinc-600 md:block">
-          Spawn coding agents that run infinitely in the cloud. Powered by AI
+          Long-running coding agents with live sandbox preview, auto-PRs, and Vercel-native deployment.
           SDK, Gateway, Sandbox, and Workflow SDK.
         </p>
       </div>

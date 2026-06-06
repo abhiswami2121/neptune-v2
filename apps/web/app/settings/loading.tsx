@@ -64,7 +64,7 @@ function PreferencesPageLoading() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold">Preferences</h1>
         <p className="text-sm text-muted-foreground">
-          Adjust Open Agents preferences and behavior.
+          Adjust Neptune Code preferences and behavior.
         </p>
       </div>
       <PreferencesSectionSkeleton />

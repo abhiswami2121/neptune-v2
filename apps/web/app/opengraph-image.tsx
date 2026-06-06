@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Open Agents — Spawn coding agents that run in the cloud";
+export const alt = "Neptune Code — The coding agent that ships";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 export const runtime = "edge";
@@ -111,7 +111,7 @@ export default function OgImage() {
                 color: "rgba(255, 255, 255, 0.5)",
               }}
             >
-              Open Agents
+              Neptune Code
             </span>
           </div>
 
@@ -125,7 +125,7 @@ export default function OgImage() {
               color: "#ffffff",
             }}
           >
-            Open Agents.
+            Neptune Code.
           </div>
 
           {/* Subtitle */}

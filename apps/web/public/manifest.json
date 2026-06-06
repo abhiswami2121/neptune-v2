@@ -1,0 +1,16 @@
+{
+  "name": "Neptune Code",
+  "short_name": "Neptune",
+  "description": "The coding agent that ships. Long-running coding agents with live sandbox preview, auto-PRs, and Vercel-native deployment.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A0E1A",
+  "theme_color": "#0A0E1A",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}
