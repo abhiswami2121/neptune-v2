@@ -1,7 +1,7 @@
 import { type ComponentProps } from "react";
 import { Button } from "@/components/ui/button";
 
-const GITHUB_URL = "https://github.com/vercel-labs/open-agents";
+const GITHUB_URL = "https://github.com/abhiswami2121/neptune-v2";
 
 export function GitHubLink({
   children,

@@ -51,7 +51,23 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
+/* ── Neptune Code Palette ── */
 :root {
+  --neptune-void: #0A0E1A;
+  --neptune-void-pure: #000000;
+  --neptune-cyan: #4FC3F7;
+  --neptune-cyan-bright: #00D4FF;
+  --neptune-cyan-glow: rgba(0, 212, 255, 0.4);
+  --neptune-cyan-soft: rgba(0, 212, 255, 0.12);
+  --glass-deep: rgba(15, 23, 42, 0.6);
+  --glass-mid: rgba(15, 23, 42, 0.4);
+  --glass-light: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --text-pure: #FFFFFF;
+  --text-primary: #F1F5F9;
+  --text-muted: #94A3B8;
+  --text-dim: #64748B;
+
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.141 0.005 285.823);
@@ -125,168 +141,169 @@
 }
 
 .landing {
-  --l-stage-slate-bg: #d4d4d4;
+  /* Neptune Code — always dark */
+  --l-stage-slate-bg: #1e293b;
   --l-stage-slate-img:
     radial-gradient(
       900px 420px at 26% 18%,
-      rgba(255, 255, 255, 0.5) 0%,
-      rgba(255, 255, 255, 0) 62%
+      rgba(79, 195, 247, 0.15) 0%,
+      rgba(79, 195, 247, 0) 62%
     ),
     radial-gradient(
       720px 520px at 82% 72%,
-      rgba(0, 0, 0, 0.12) 0%,
+      rgba(0, 0, 0, 0.3) 0%,
       rgba(0, 0, 0, 0) 58%
     ),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.06) 0%, rgba(0, 0, 0, 0) 55%);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0) 55%);
   --l-stage-slate-shadow:
-    0 50px 90px rgba(0, 0, 0, 0.1), 0 2px 0 rgba(255, 255, 255, 0.5) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.08) inset;
-  --l-stage-ash-bg: #cccccc;
+    0 50px 90px rgba(0, 0, 0, 0.5), 0 2px 0 rgba(255, 255, 255, 0.04) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.2) inset;
+  --l-stage-ash-bg: #1a2332;
   --l-stage-ash-img:
     radial-gradient(
       900px 420px at 22% 20%,
-      rgba(255, 255, 255, 0.55) 0%,
-      rgba(255, 255, 255, 0) 62%
+      rgba(79, 195, 247, 0.12) 0%,
+      rgba(79, 195, 247, 0) 62%
     ),
     radial-gradient(
       820px 560px at 80% 74%,
-      rgba(0, 0, 0, 0.1) 0%,
+      rgba(0, 0, 0, 0.25) 0%,
       rgba(0, 0, 0, 0) 60%
     ),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0) 55%);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0) 55%);
   --l-stage-ash-shadow:
-    0 50px 90px rgba(0, 0, 0, 0.1), 0 2px 0 rgba(255, 255, 255, 0.5) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.08) inset;
-  --l-stage-iron-bg: #d0cec9;
+    0 50px 90px rgba(0, 0, 0, 0.5), 0 2px 0 rgba(255, 255, 255, 0.04) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.2) inset;
+  --l-stage-iron-bg: #162032;
   --l-stage-iron-img:
     radial-gradient(
       900px 420px at 24% 18%,
-      rgba(255, 255, 255, 0.5) 0%,
-      rgba(255, 255, 255, 0) 62%
+      rgba(79, 195, 247, 0.1) 0%,
+      rgba(79, 195, 247, 0) 62%
     ),
     radial-gradient(
       780px 560px at 82% 72%,
-      rgba(0, 0, 0, 0.1) 0%,
+      rgba(0, 0, 0, 0.25) 0%,
       rgba(0, 0, 0, 0) 60%
     ),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.06) 0%, rgba(0, 0, 0, 0) 55%);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0) 55%);
   --l-stage-iron-shadow:
-    0 10px 20px rgba(0, 0, 0, 0.1), 0 2px 0 rgba(255, 255, 255, 0.5) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.08) inset;
-  --l-stage-overlay: rgba(0, 0, 0, 0.02);
-  --l-bg: #fafafa;
-  --l-surface: #ffffff;
-  --l-surface-2: #f0f0f0;
-  --l-surface-3: rgba(0, 0, 0, 0.04);
-  --l-surface-4: rgba(0, 0, 0, 0.07);
-  --l-border: rgba(0, 0, 0, 0.12);
-  --l-border-subtle: rgba(0, 0, 0, 0.06);
-  --l-fg: #0a0a0a;
-  --l-fg-2: rgba(0, 0, 0, 0.7);
-  --l-fg-3: rgba(0, 0, 0, 0.5);
-  --l-fg-4: rgba(0, 0, 0, 0.35);
-  --l-fg-5: rgba(0, 0, 0, 0.18);
-  --l-fg-6: rgba(0, 0, 0, 0.08);
-  --l-accent: #ff8a3d;
-  --l-panel: #ffffff;
-  --l-panel-fg: rgba(0, 0, 0, 0.85);
-  --l-panel-fg-2: rgba(0, 0, 0, 0.6);
-  --l-panel-fg-3: rgba(0, 0, 0, 0.4);
-  --l-panel-fg-4: rgba(0, 0, 0, 0.22);
-  --l-panel-fg-5: rgba(0, 0, 0, 0.1);
-  --l-panel-border: rgba(0, 0, 0, 0.12);
-  --l-panel-surface: rgba(0, 0, 0, 0.05);
-  --l-panel-active: rgba(0, 0, 0, 0.07);
-  --l-panel-dot: rgba(0, 0, 0, 0.35);
-  --l-btn-bg: #0a0a0a;
-  --l-btn-fg: #ffffff;
-  --l-btn-hover: rgba(0, 0, 0, 0.8);
-  --l-code-bg: #eaeaea;
-  --l-window-shadow:
-    0 40px 80px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06);
-  --l-nav-bg: rgb(250, 250, 250);
-}
-
-.dark .landing {
-  --l-stage-slate-bg: #b8b8b8;
-  --l-stage-slate-img:
-    radial-gradient(
-      900px 420px at 26% 18%,
-      rgba(255, 255, 255, 0.55) 0%,
-      rgba(255, 255, 255, 0) 62%
-    ),
-    radial-gradient(
-      720px 520px at 82% 72%,
-      rgba(0, 0, 0, 0.18) 0%,
-      rgba(0, 0, 0, 0) 58%
-    ),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.12) 0%, rgba(0, 0, 0, 0) 55%);
-  --l-stage-slate-shadow:
-    0 50px 90px rgba(0, 0, 0, 0.55), 0 2px 0 rgba(255, 255, 255, 0.06) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.24) inset;
-  --l-stage-ash-bg: #a8a8a8;
-  --l-stage-ash-img:
-    radial-gradient(
-      900px 420px at 22% 20%,
-      rgba(255, 255, 255, 0.6) 0%,
-      rgba(255, 255, 255, 0) 62%
-    ),
-    radial-gradient(
-      820px 560px at 80% 74%,
-      rgba(0, 0, 0, 0.16) 0%,
-      rgba(0, 0, 0, 0) 60%
-    ),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0) 55%);
-  --l-stage-ash-shadow:
-    0 50px 90px rgba(0, 0, 0, 0.55), 0 2px 0 rgba(255, 255, 255, 0.06) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.24) inset;
-  --l-stage-iron-bg: #c0bdb8;
-  --l-stage-iron-img:
-    radial-gradient(
-      900px 420px at 24% 18%,
-      rgba(255, 255, 255, 0.55) 0%,
-      rgba(255, 255, 255, 0) 62%
-    ),
-    radial-gradient(
-      780px 560px at 82% 72%,
-      rgba(0, 0, 0, 0.17) 0%,
-      rgba(0, 0, 0, 0) 60%
-    ),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.12) 0%, rgba(0, 0, 0, 0) 55%);
-  --l-stage-iron-shadow:
-    0 50px 90px rgba(0, 0, 0, 0.55), 0 2px 0 rgba(255, 255, 255, 0.06) inset,
-    0 -1px 0 rgba(0, 0, 0, 0.24) inset;
-  --l-stage-overlay: rgba(0, 0, 0, 0.1);
-  --l-bg: #0a0a0a;
-  --l-surface: #111111;
-  --l-surface-2: #0a0a0a;
-  --l-surface-3: rgba(255, 255, 255, 0.03);
-  --l-surface-4: rgba(255, 255, 255, 0.05);
-  --l-border: rgba(255, 255, 255, 0.06);
+    0 50px 90px rgba(0, 0, 0, 0.5), 0 2px 0 rgba(255, 255, 255, 0.04) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.2) inset;
+  --l-stage-overlay: rgba(0, 0, 0, 0.15);
+  --l-bg: #0A0E1A;
+  --l-surface: #0F172A;
+  --l-surface-2: #0A0E1A;
+  --l-surface-3: rgba(255, 255, 255, 0.04);
+  --l-surface-4: rgba(255, 255, 255, 0.08);
+  --l-border: rgba(255, 255, 255, 0.08);
   --l-border-subtle: rgba(255, 255, 255, 0.04);
-  --l-fg: #ffffff;
-  --l-fg-2: rgba(255, 255, 255, 0.7);
-  --l-fg-3: rgba(255, 255, 255, 0.5);
+  --l-fg: #FFFFFF;
+  --l-fg-2: #94A3B8;
+  --l-fg-3: #64748B;
   --l-fg-4: rgba(255, 255, 255, 0.35);
   --l-fg-5: rgba(255, 255, 255, 0.2);
   --l-fg-6: rgba(255, 255, 255, 0.1);
-  --l-accent: #ff8a3d;
-  --l-panel: #0a0a0a;
-  --l-panel-fg: rgba(255, 255, 255, 0.6);
-  --l-panel-fg-2: rgba(255, 255, 255, 0.4);
-  --l-panel-fg-3: rgba(255, 255, 255, 0.25);
-  --l-panel-fg-4: rgba(255, 255, 255, 0.15);
-  --l-panel-fg-5: rgba(255, 255, 255, 0.08);
-  --l-panel-border: rgba(255, 255, 255, 0.06);
-  --l-panel-surface: rgba(255, 255, 255, 0.03);
-  --l-panel-active: rgba(255, 255, 255, 0.05);
-  --l-panel-dot: rgba(255, 255, 255, 0.25);
-  --l-btn-bg: #ffffff;
-  --l-btn-fg: #000000;
-  --l-btn-hover: rgba(255, 255, 255, 0.9);
-  --l-code-bg: #050505;
+  --l-accent: #4FC3F7;
+  --l-panel: #0F172A;
+  --l-panel-fg: rgba(255, 255, 255, 0.85);
+  --l-panel-fg-2: rgba(255, 255, 255, 0.6);
+  --l-panel-fg-3: rgba(255, 255, 255, 0.4);
+  --l-panel-fg-4: rgba(255, 255, 255, 0.22);
+  --l-panel-fg-5: rgba(255, 255, 255, 0.1);
+  --l-panel-border: rgba(255, 255, 255, 0.08);
+  --l-panel-surface: rgba(255, 255, 255, 0.04);
+  --l-panel-active: rgba(255, 255, 255, 0.07);
+  --l-panel-dot: rgba(79, 195, 247, 0.5);
+  --l-btn-bg: #0A0E1A;
+  --l-btn-fg: #4FC3F7;
+  --l-btn-hover: rgba(79, 195, 247, 0.15);
+  --l-code-bg: #050510;
   --l-window-shadow: 0 40px 80px rgba(0, 0, 0, 0.55);
-  --l-nav-bg: rgb(10, 10, 10);
+  --l-nav-bg: rgb(10, 14, 26);
+}
+
+.dark .landing {
+  /* Neptune Code — identical dark palette regardless of system theme */
+  --l-stage-slate-bg: #1e293b;
+  --l-stage-slate-img:
+    radial-gradient(
+      900px 420px at 26% 18%,
+      rgba(79, 195, 247, 0.15) 0%,
+      rgba(79, 195, 247, 0) 62%
+    ),
+    radial-gradient(
+      720px 520px at 82% 72%,
+      rgba(0, 0, 0, 0.3) 0%,
+      rgba(0, 0, 0, 0) 58%
+    ),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0) 55%);
+  --l-stage-slate-shadow:
+    0 50px 90px rgba(0, 0, 0, 0.5), 0 2px 0 rgba(255, 255, 255, 0.04) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.2) inset;
+  --l-stage-ash-bg: #1a2332;
+  --l-stage-ash-img:
+    radial-gradient(
+      900px 420px at 22% 20%,
+      rgba(79, 195, 247, 0.12) 0%,
+      rgba(79, 195, 247, 0) 62%
+    ),
+    radial-gradient(
+      820px 560px at 80% 74%,
+      rgba(0, 0, 0, 0.25) 0%,
+      rgba(0, 0, 0, 0) 60%
+    ),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0) 55%);
+  --l-stage-ash-shadow:
+    0 50px 90px rgba(0, 0, 0, 0.5), 0 2px 0 rgba(255, 255, 255, 0.04) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.2) inset;
+  --l-stage-iron-bg: #162032;
+  --l-stage-iron-img:
+    radial-gradient(
+      900px 420px at 24% 18%,
+      rgba(79, 195, 247, 0.1) 0%,
+      rgba(79, 195, 247, 0) 62%
+    ),
+    radial-gradient(
+      780px 560px at 82% 72%,
+      rgba(0, 0, 0, 0.25) 0%,
+      rgba(0, 0, 0, 0) 60%
+    ),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0) 55%);
+  --l-stage-iron-shadow:
+    0 50px 90px rgba(0, 0, 0, 0.5), 0 2px 0 rgba(255, 255, 255, 0.04) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.2) inset;
+  --l-stage-overlay: rgba(0, 0, 0, 0.15);
+  --l-bg: #0A0E1A;
+  --l-surface: #0F172A;
+  --l-surface-2: #0A0E1A;
+  --l-surface-3: rgba(255, 255, 255, 0.04);
+  --l-surface-4: rgba(255, 255, 255, 0.08);
+  --l-border: rgba(255, 255, 255, 0.08);
+  --l-border-subtle: rgba(255, 255, 255, 0.04);
+  --l-fg: #FFFFFF;
+  --l-fg-2: #94A3B8;
+  --l-fg-3: #64748B;
+  --l-fg-4: rgba(255, 255, 255, 0.35);
+  --l-fg-5: rgba(255, 255, 255, 0.2);
+  --l-fg-6: rgba(255, 255, 255, 0.1);
+  --l-accent: #4FC3F7;
+  --l-panel: #0F172A;
+  --l-panel-fg: rgba(255, 255, 255, 0.85);
+  --l-panel-fg-2: rgba(255, 255, 255, 0.6);
+  --l-panel-fg-3: rgba(255, 255, 255, 0.4);
+  --l-panel-fg-4: rgba(255, 255, 255, 0.22);
+  --l-panel-fg-5: rgba(255, 255, 255, 0.1);
+  --l-panel-border: rgba(255, 255, 255, 0.08);
+  --l-panel-surface: rgba(255, 255, 255, 0.04);
+  --l-panel-active: rgba(255, 255, 255, 0.07);
+  --l-panel-dot: rgba(79, 195, 247, 0.5);
+  --l-btn-bg: #0A0E1A;
+  --l-btn-fg: #4FC3F7;
+  --l-btn-hover: rgba(79, 195, 247, 0.15);
+  --l-code-bg: #050510;
+  --l-window-shadow: 0 40px 80px rgba(0, 0, 0, 0.55);
+  --l-nav-bg: rgb(10, 14, 26);
 }
 
 .grain::before {
@@ -440,4 +457,13 @@
     animation: none;
     transform: scaleX(1);
   }
+}
+
+/* Neptune body background — radial void gradient */
+.neptune-body {
+  background:
+    radial-gradient(ellipse 900px 420px at 26% 18%, rgba(79, 195, 247, 0.06) 0%, transparent 62%),
+    radial-gradient(ellipse 720px 520px at 82% 72%, rgba(0, 212, 255, 0.04) 0%, transparent 58%),
+    var(--neptune-void, #0A0E1A);
+  min-height: 100vh;
 }

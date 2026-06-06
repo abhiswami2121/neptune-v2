@@ -37,13 +37,42 @@ export function SignedOutHero() {
         <section className="relative overflow-hidden pb-0 pt-24 md:pb-0 md:pt-44">
           <div className="mx-auto max-w-[1320px] px-6">
             <div className="max-w-[740px]">
-              <h1 className="text-4xl font-semibold leading-[1.03] tracking-tighter sm:text-5xl md:text-7xl">
-                Open Agents.
+              <h1
+                className="text-4xl font-light leading-[1.03] tracking-tight sm:text-5xl md:text-7xl"
+                style={{ letterSpacing: "-0.03em" }}
+              >
+                Neptune Code
               </h1>
               <p className="mt-4 text-balance text-base leading-relaxed text-(--l-fg-2) sm:mt-6 sm:text-xl">
-                Spawn coding agents that run infinitely in the cloud. Powered by
-                AI SDK, Gateway, Sandbox, and Workflow SDK.
+                The coding agent that ships.
               </p>
+              <p className="mt-3 max-w-[520px] text-balance text-sm leading-relaxed text-(--l-fg-3) sm:text-base">
+                Spin up a sandbox. Connect a repo. Describe the task. Watch real
+                PRs land on your main branch.
+              </p>
+
+              <ul className="mt-6 space-y-2.5 text-sm text-(--l-fg-2) sm:text-base">
+                <li className="flex items-center gap-2.5">
+                  <span className="text-(--neptune-cyan) select-none">&#x2713;</span>
+                  Long-running agents (no laptop required)
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <span className="text-(--neptune-cyan) select-none">&#x2713;</span>
+                  Live sandbox preview at any port
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <span className="text-(--neptune-cyan) select-none">&#x2713;</span>
+                  Auto-commit, auto-PR, ready to merge
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <span className="text-(--neptune-cyan) select-none">&#x2713;</span>
+                  Branch isolation per task
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <span className="text-(--neptune-cyan) select-none">&#x2713;</span>
+                  Pause, resume, share sessions
+                </li>
+              </ul>
             </div>
 
             <div

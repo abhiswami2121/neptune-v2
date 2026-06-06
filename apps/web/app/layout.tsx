@@ -46,22 +46,33 @@ const metadataBase =
     ? new URL(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`)
     : process.env.VERCEL_URL
       ? new URL(`https://${process.env.VERCEL_URL}`)
-      : new URL("https://open-agents.dev");
+      : new URL("https://neptune-v2.vercel.app");
 
 export const metadata: Metadata = {
   metadataBase,
   title: {
-    default: "Open Agents",
-    template: "%s | Open Agents",
+    default: "Neptune Code — The coding agent that ships",
+    template: "%s | Neptune Code",
   },
   description:
-    "Spawn coding agents that run infinitely in the cloud. Powered by AI SDK, Gateway, Sandbox, and Workflow SDK.",
+    "Neptune Code — The coding agent that ships. Long-running coding agents with live sandbox preview, auto-PRs, and Vercel-native deployment.",
+  applicationName: "Neptune Code",
+  openGraph: {
+    title: "Neptune Code — The coding agent that ships",
+    description:
+      "Spin up a sandbox. Connect a repo. Describe the task. Watch real PRs land on your main branch.",
+    siteName: "Neptune Code",
+    type: "website",
+  },
   icons: {
     icon: faviconPath,
     shortcut: faviconPath,
   },
   twitter: {
     card: "summary_large_image",
+    title: "Neptune Code — The coding agent that ships",
+    description:
+      "Long-running coding agents with live sandbox preview, auto-PRs, and Vercel-native deployment.",
   },
 };
 

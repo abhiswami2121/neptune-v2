@@ -67,6 +67,18 @@ export function SignInButton({
       aria-busy={isLoading}
       disabled={disabled || isLoading}
       onClick={handleSignIn}
+      style={{
+        background: "linear-gradient(135deg, #4FC3F7, #00D4FF)",
+        color: "#0A0E1A",
+        fontWeight: 500,
+        fontSize: "14px",
+        letterSpacing: "0.02em",
+        padding: "14px 32px",
+        borderRadius: "8px",
+        boxShadow:
+          "0 0 40px rgba(0,212,255,0.4), 0 0 0 1px rgba(255,255,255,0.1)",
+        border: "none",
+      }}
     >
       {isLoading ? <Loader2 className="animate-spin" /> : <VercelIcon />}
       {isLoading ? "Signing in..." : "Sign in with Vercel"}

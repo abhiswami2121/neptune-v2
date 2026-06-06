@@ -7,12 +7,10 @@ export function LandingFooter() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-4">
           <div className="px-6 pt-14 md:px-10 md:py-18">
             <div className="font-mono text-xs uppercase tracking-widest text-(--l-fg-3)">
-              Open Agents
+              Neptune Code
             </div>
             <div className="mt-3 text-sm text-(--l-fg-2)">
-              Open Agents for
-              <br />
-              shipping code.
+              The coding agent that ships.
             </div>
           </div>
 
@@ -24,36 +22,26 @@ export function LandingFooter() {
             </div>
             <div className="mt-4 flex flex-col gap-2">
               <a
-                href="https://ai-sdk.dev/"
+                href="https://neptune-v2.vercel.app/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                AI SDK
+                Neptune Code
               </a>
               <a
-                href="https://vercel.com/ai-gateway"
+                href="https://github.com/abhiswami2121/neptune-v2"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                AI Gateway
+                GitHub
               </a>
               <a
-                href="https://vercel.com/sandbox"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="/get-started"
                 className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                Sandbox
-              </a>
-              <a
-                href="https://useworkflow.dev/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-sans text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
-              >
-                Workflow SDK
+                Get Started
               </a>
             </div>
           </div>
@@ -64,49 +52,31 @@ export function LandingFooter() {
             </div>
             <div className="mt-4 flex flex-col gap-2">
               <a
-                href="https://github.com/vercel-labs/open-agents"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="/privacy"
                 className="text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                GitHub
+                Privacy
               </a>
               <a
-                href="https://vercel.com"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="/terms"
                 className="text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                Vercel
+                Terms
               </a>
               <a
-                href="https://ai-sdk.dev/docs/introduction"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="/status"
                 className="text-sm text-(--l-fg-2) transition-colors hover:text-(--l-fg)"
               >
-                AI SDK Docs
+                Status
               </a>
             </div>
           </div>
         </div>
 
         <div className="flex items-center justify-between px-6 pt-6 pb-6 md:pt-0 md:px-10 md:pb-10">
-          <a
-            href="https://vercel.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-(--l-fg)"
-          >
-            <svg
-              viewBox="0 0 76 65"
-              className="h-4"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" />
-            </svg>
-          </a>
+          <span className="text-sm text-(--l-fg-3)">
+            Neptune &copy; 2026 NewLeaf Financial
+          </span>
           <ThemeToggle />
         </div>
       </div>
