@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 const themeInitializationScript = `
 (() => {
-  const storageKey = "open-agents-theme";
+  const storageKey = "neptune-code-theme";
   const darkModeMediaQuery = "(prefers-color-scheme: dark)";
   const storedTheme = window.localStorage.getItem(storageKey);
 
