@@ -22,6 +22,8 @@ export interface UserPreferencesData {
   alertsEnabled: boolean;
   alertSoundEnabled: boolean;
   publicUsageEnabled: boolean;
+  /** Enable auto mode — AI classifies prompt and picks optimal model tier */
+  autoMode: boolean;
   globalSkillRefs: GlobalSkillRef[];
   modelVariants: ModelVariant[];
   enabledModelIds: string[];
@@ -37,6 +39,7 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   alertsEnabled: true,
   alertSoundEnabled: true,
   publicUsageEnabled: false,
+  autoMode: false,
   globalSkillRefs: [],
   modelVariants: [],
   enabledModelIds: [],
@@ -93,7 +96,7 @@ export function toUserPreferencesData(
     | "globalSkillRefs"
     | "modelVariants"
     | "enabledModelIds"
-  >,
+  > & { autoMode?: boolean },
 ): UserPreferencesData {
   const parsedModelVariants = modelVariantsSchema.safeParse(
     row?.modelVariants ?? [],
@@ -111,6 +114,7 @@ export function toUserPreferencesData(
       row?.alertSoundEnabled ?? DEFAULT_PREFERENCES.alertSoundEnabled,
     publicUsageEnabled:
       row?.publicUsageEnabled ?? DEFAULT_PREFERENCES.publicUsageEnabled,
+    autoMode: (row as any)?.autoMode ?? DEFAULT_PREFERENCES.autoMode,
     globalSkillRefs: normalizeGlobalSkillRefs(row?.globalSkillRefs),
     modelVariants: parsedModelVariants.success ? parsedModelVariants.data : [],
     enabledModelIds: normalizeEnabledModelIds(row?.enabledModelIds),

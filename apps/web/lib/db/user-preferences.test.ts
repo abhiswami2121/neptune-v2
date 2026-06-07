@@ -20,6 +20,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      autoMode: false,
       globalSkillRefs: [],
       modelVariants: [],
       enabledModelIds: [],
@@ -153,6 +154,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      autoMode: false,
       globalSkillRefs: [],
       modelVariants: [
         {
@@ -175,6 +177,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      autoMode: false,
       globalSkillRefs: [],
       modelVariants: [
         {

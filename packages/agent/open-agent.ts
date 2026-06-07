@@ -7,6 +7,11 @@ import {
   gateway,
   type ProviderOptionsByProvider,
 } from "./models";
+import {
+  resolveAutoModel,
+  extractUserMessages,
+  type AutoModeClassification,
+} from "./agents/auto-agent";
 
 import type { SkillMetadata } from "./skills/types";
 import { buildSystemPrompt } from "./system-prompt";
@@ -44,11 +49,13 @@ const callOptionsSchema = z.object({
   subagentModel: z.custom<OpenAgentModelInput>().optional(),
   customInstructions: z.string().optional(),
   skills: z.custom<SkillMetadata[]>().optional(),
+  /** Enable auto mode — classifies prompt and picks optimal model tier */
+  autoMode: z.boolean().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
 
-export const defaultModelLabel = "anthropic/claude-opus-4.6" as const;
+export const defaultModelLabel = "deepseek/deepseek-v4-flash" as const;
 export const defaultModel = gateway(defaultModelLabel);
 
 function normalizeAgentModelSelection(
@@ -90,14 +97,33 @@ export const openAgent = new ToolLoopAgent({
       }),
     };
   },
-  prepareCall: ({ options, ...settings }) => {
+  prepareCall: ({ options, messages, ...settings }) => {
     if (!options) {
       throw new Error("Open Agent requires call options with sandbox.");
     }
 
+    // ---- AUTO MODE: classify task + pick model tier ----
+    let autoClassification: AutoModeClassification | null = null;
+    const hasExplicitModel = options.model !== undefined;
+    const autoModeEnabled = options.autoMode === true;
+
+    if (autoModeEnabled && !hasExplicitModel && messages) {
+      const userMessages = extractUserMessages(messages);
+      if (userMessages.length > 0) {
+        autoClassification = resolveAutoModel(userMessages, {
+          enabled: true,
+        });
+      }
+    }
+
+    // ---- Model selection ----
+    const effectiveModelId = autoClassification?.modelId
+      ? autoClassification.modelId
+      : undefined;
+
     const mainSelection = normalizeAgentModelSelection(
-      options.model,
-      defaultModelLabel,
+      options.model ?? effectiveModelId,
+      effectiveModelId ?? defaultModelLabel,
     );
     const subagentSelection = options.subagentModel
       ? normalizeAgentModelSelection(options.subagentModel, defaultModelLabel)
@@ -137,6 +163,7 @@ export const openAgent = new ToolLoopAgent({
         skills,
         model: callModel,
         subagentModel,
+        autoClassification,
       },
     };
   },

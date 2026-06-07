@@ -47,6 +47,7 @@ const basePreferences: UserPreferencesData = {
   alertsEnabled: true,
   alertSoundEnabled: true,
   publicUsageEnabled: false,
+  autoMode: false,
   globalSkillRefs: [],
   modelVariants: [userOpusVariant],
   enabledModelIds: ["anthropic/claude-opus-4.6", "openai/gpt-5"],

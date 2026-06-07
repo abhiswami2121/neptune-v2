@@ -7,6 +7,7 @@ import type {
   UIMessage,
 } from "ai";
 import type { webAgent } from "./config";
+import type { AutoModeClassification } from "@open-agents/agent";
 
 export type WebAgent = typeof webAgent;
 export type WebAgentCallOptions = Parameters<
@@ -30,6 +31,14 @@ export type WebAgentMessageMetadata = {
   lastStepFinishReason?: FinishReason;
   lastStepRawFinishReason?: string;
   stepFinishReasons?: WebAgentStepFinishMetadata[];
+  /** Auto mode classification — set when auto mode picked the model tier */
+  autoClassification?: {
+    taskClass: string;
+    tier: string;
+    modelId: string;
+    reason: string;
+    signals: string[];
+  };
 };
 
 export type WebAgentGitDataStatus = "pending" | "success" | "error" | "skipped";

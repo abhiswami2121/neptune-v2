@@ -68,6 +68,8 @@ type Options = {
   authSession: AuthSessionContext;
   selectedModelId?: string;
   modelId?: string;
+  /** Enable auto mode — classifies prompt and picks optimal model tier */
+  autoMode?: boolean;
   agentOptions?: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
   assistantId?: string;
   inputMessagesPersisted?: boolean;
@@ -79,6 +81,8 @@ type Options = {
 type ChatModelRuntime = {
   selectedModelId: string;
   modelId: string;
+  /** Whether auto mode was activated for this run */
+  autoMode: boolean;
   agentOptions: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
   autoCommitEnabled: boolean;
   autoCreatePrEnabled: boolean;
@@ -215,15 +219,25 @@ async function resolveChatModelRuntime(params: {
     autoCommitEnabled &&
     (sessionRecord.autoCreatePrOverride ?? preferences?.autoCreatePr ?? false);
 
+  // Auto mode: when enabled AND no explicit model selected, skip model
+  // so prepareCall hook can classify the prompt and pick the optimal tier.
+  const autoModeEnabled =
+    (preferences?.autoMode ?? false) && selectedModelId === null;
+
   return {
     selectedModelId: selectedModelId ?? mainModelSelection.id,
     modelId: mainModelSelection.id,
+    autoMode: autoModeEnabled,
     agentOptions: {
-      model: mainModelSelection,
+      // Only pass model when NOT in auto mode or when explicitly selected
+      ...(autoModeEnabled
+        ? {}
+        : { model: mainModelSelection }),
       ...(subagentModelSelection
         ? { subagentModel: subagentModelSelection }
         : {}),
       customInstructions: assistantFileLinkPrompt,
+      ...(autoModeEnabled ? { autoMode: true } : {}),
     },
     autoCommitEnabled,
     autoCreatePrEnabled,
@@ -698,13 +712,29 @@ export async function runAgentWorkflow(options: Options) {
     ]);
     selectedModelId = options.selectedModelId ?? modelRuntime.selectedModelId;
     modelId = options.modelId ?? modelRuntime.modelId;
+
+    // Capture auto mode classification in message metadata
+    let autoClassificationMeta: WebAgentMessageMetadata["autoClassification"];
+    if (modelRuntime.autoMode) {
+      autoClassificationMeta = {
+        taskClass: "auto",
+        tier: "auto",
+        modelId,
+        reason: "Auto mode — AI selected optimal model tier for this task",
+        signals: [],
+      };
+    }
+
     pendingAssistantResponse = {
       ...pendingAssistantResponse,
-      metadata: withModelMetadata(
-        pendingAssistantResponse.metadata,
-        selectedModelId,
-        modelId,
-      ),
+      metadata: {
+        ...withModelMetadata(
+          pendingAssistantResponse.metadata,
+          selectedModelId,
+          modelId,
+        ),
+        autoClassification: autoClassificationMeta,
+      },
     };
 
     const agentOptions: OpenAgentCallOptions = {

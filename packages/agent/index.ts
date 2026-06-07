@@ -1,3 +1,12 @@
+export {
+  type AutoModeClassification,
+  type AutoTier,
+  type TaskClass,
+  classifyTask,
+  extractUserMessages,
+  getTierInfo,
+  resolveAutoModel,
+} from "./agents/auto-agent";
 export { type GatewayConfig, type GatewayOptions, gateway } from "./models";
 export type {
   AgentModelSelection,
