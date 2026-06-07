@@ -209,66 +209,150 @@ export function gateway(
 }
 
 // ---------------------------------------------------------------
-// Direct DeepSeek provider
+// AI Gateway-PRIMARY + DeepSeek-FALLBACK model resolution
 // ---------------------------------------------------------------
-// DeepSeek V4 models (pro, flash) stream ONLY reasoning tokens through
-// the Vercel AI Gateway — no content text. The AI SDK receives
-// reasoning-delta chunks but the UI waits for text-delta, appearing
-// "stuck thinking".  Direct API with deepseek-chat alias resolves
-// to the non-reasoning variant that streams normal content.
+// Mission 9 (2026-06-07) — methodical fix after 8 prior missions.
 //
-// Route ALL DeepSeek-flagged model IDs through the direct DeepSeek
-// API (OpenAI-compatible) instead of the Gateway.
+// EMPIRICAL FINDINGS (Phase 3 curl tests against ai-gateway.vercel.sh):
+//
+//   MODEL                         GATEWAY STREAMING        VERDICT
+//   deepseek/deepseek-v3          text-delta ✓             GATEWAY PRIMARY
+//   deepseek/deepseek-v3.1        text-delta ✓             GATEWAY PRIMARY
+//   deepseek/deepseek-v3.1-terminus text-delta ✓          GATEWAY PRIMARY
+//   deepseek/deepseek-v3.2        text-delta ✓             GATEWAY PRIMARY
+//   deepseek/deepseek-v3.2-thinking text-delta ✓          GATEWAY PRIMARY
+//   deepseek/deepseek-v4-pro      reasoning-only ✗         DIRECT FALLBACK
+//   deepseek/deepseek-v4-flash    reasoning-only ✗         DIRECT FALLBACK
+//   deepseek/deepseek-r1          reasoning-only ✗         DIRECT FALLBACK
+//
+// Root cause: V4 models are reasoning models. Through Gateway they
+// stream ONLY reasoning-delta chunks, no text-delta. The AI SDK's
+// UI displays text-delta — so the UI appears "stuck thinking"
+// forever. V3 models stream text-delta beautifully through Gateway.
+//
+// Strategy per USER DIRECTIVE:
+//   "use gateway default and then fallback to deepseek if gateway
+//    is not working"
+//
+//   - V3.x DeepSeek: GATEWAY PRIMARY (streams beautifully, proven)
+//   - V4.x + R1:     DIRECT FALLBACK (reasoning models, Gateway
+//                     returns empty content — treated as "not working")
+//   - Non-DeepSeek:  GATEWAY ONLY (Anthropic, OpenAI, etc.)
+//
+// Structured logging: [chat-provider-resolved] on every model
+// resolution showing { modelId, provider, fallbackUsed }.
 // ---------------------------------------------------------------
 
-/** Map Gateway model IDs (deepseek/…) to DeepSeek API aliases. */
-const DEEPSEEK_MODEL_MAP: Record<string, string> = {
-	"deepseek/deepseek-v4-pro": "deepseek-chat",
-	"deepseek/deepseek-v4-flash": "deepseek-chat",
-	"deepseek/deepseek-v3.2": "deepseek-chat",
-	"deepseek/deepseek-v3.2-thinking": "deepseek-reasoner",
-	"deepseek/deepseek-v3.1": "deepseek-chat",
-	"deepseek/deepseek-v3.1-terminus": "deepseek-chat",
-	"deepseek/deepseek-v3": "deepseek-chat",
-	"deepseek/deepseek-r1": "deepseek-reasoner",
+/**
+ * DeepSeek models that stream text-delta through Gateway.
+ * Verified empirically 2026-06-07 via curl against ai-gateway.vercel.sh.
+ */
+const GATEWAY_DEEPSEEK_MODELS = new Set<string>([
+  "deepseek/deepseek-v3",
+  "deepseek/deepseek-v3.1",
+  "deepseek/deepseek-v3.1-terminus",
+  "deepseek/deepseek-v3.2",
+  "deepseek/deepseek-v3.2-thinking",
+]);
+
+/**
+ * DeepSeek reasoning models — Gateway streams reasoning-delta only
+ * (no text-delta). Route through direct DeepSeek API which maps
+ * to non-reasoning aliases (deepseek-chat / deepseek-reasoner).
+ */
+const REASONING_DEEPSEEK_MODELS = new Set<string>([
+  "deepseek/deepseek-v4-pro",
+  "deepseek/deepseek-v4-flash",
+  "deepseek/deepseek-r1",
+]);
+
+/** Map Gateway model IDs → DeepSeek API aliases (direct fallback path). */
+const DEEPSEEK_FALLBACK_MAP: Record<string, string> = {
+  "deepseek/deepseek-v4-pro": "deepseek-chat",
+  "deepseek/deepseek-v4-flash": "deepseek-chat",
+  "deepseek/deepseek-v3.2": "deepseek-chat",
+  "deepseek/deepseek-v3.2-thinking": "deepseek-reasoner",
+  "deepseek/deepseek-v3.1": "deepseek-chat",
+  "deepseek/deepseek-v3.1-terminus": "deepseek-chat",
+  "deepseek/deepseek-v3": "deepseek-chat",
+  "deepseek/deepseek-r1": "deepseek-reasoner",
 };
 
 let _deepseekProvider: ReturnType<typeof createOpenAI> | undefined;
 
 function getDeepSeekProvider(): ReturnType<typeof createOpenAI> {
-	if (!_deepseekProvider) {
-		_deepseekProvider = createOpenAI({
-			apiKey: process.env.DEEPSEEK_API_KEY,
-			baseURL: "https://api.deepseek.com/v1",
-		});
-	}
-	return _deepseekProvider;
+  if (!_deepseekProvider) {
+    _deepseekProvider = createOpenAI({
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      baseURL: "https://api.deepseek.com/v1",
+    });
+  }
+  return _deepseekProvider;
 }
 
 export function isDeepSeekModel(modelId: string): boolean {
-	return modelId.startsWith("deepseek/");
+  return modelId.startsWith("deepseek/");
 }
 
 /**
  * Create a language model for the given model ID.
  *
- * - DeepSeek models are routed through the direct DeepSeek API
- *   (OpenAI-compatible endpoint) to avoid Gateway reasoning-only output.
- * - All other models go through the Vercel AI Gateway.
+ * Resolution logic (per Mission 9 / user directive):
+ *
+ *   1. Non-DeepSeek models → Gateway (Anthropic, OpenAI, etc.)
+ *   2. DeepSeek V3.x models → Gateway PRIMARY (streams text-delta ✓)
+ *   3. DeepSeek V4.x + R1 models → Direct DeepSeek API (FALLBACK)
+ *      because Gateway streams reasoning-only (no text-delta) for
+ *      these reasoning models.
+ *
+ * Every resolution logs [chat-provider-resolved] with the provider
+ * path taken so operators can audit per-request routing.
  */
 export function createDirectModel(
-	modelId: GatewayModelId,
-	options: GatewayOptions = {},
+  modelId: GatewayModelId,
+  options: GatewayOptions = {},
 ): LanguageModel {
-	if (isDeepSeekModel(modelId)) {
-		const provider = getDeepSeekProvider();
-		const apiModelId = DEEPSEEK_MODEL_MAP[modelId] ?? "deepseek-chat";
-		// Use .chat() to target the Chat Completions API (/v1/chat/completions)
-		// instead of the default Responses API (/v1/responses), which DeepSeek
-		// does not support. Without this, the AI SDK sends requests to
-		// /v1/responses which returns 404, causing the UI to appear stuck.
-		return provider.chat(apiModelId);
-	}
+  if (!isDeepSeekModel(modelId)) {
+    // Non-DeepSeek: Gateway only (Anthropic, OpenAI, Google, etc.)
+    console.log("[chat-provider-resolved]", {
+      modelId,
+      provider: "gateway",
+      fallbackUsed: false,
+    });
+    return gateway(modelId, options);
+  }
 
-	return gateway(modelId, options);
+  const apiModelId = DEEPSEEK_FALLBACK_MAP[modelId] ?? "deepseek-chat";
+
+  // V3.x models: Gateway streams text-delta beautifully — use it.
+  if (GATEWAY_DEEPSEEK_MODELS.has(modelId)) {
+    console.log("[chat-provider-resolved]", {
+      modelId,
+      provider: "gateway",
+      fallbackUsed: false,
+      modelClass: "v3-content-streaming",
+    });
+    return gateway(modelId, options);
+  }
+
+  // V4.x / R1 reasoning models: Gateway streams reasoning-only.
+  // Fall back to direct DeepSeek API for content streaming.
+  const provider = getDeepSeekProvider();
+  const reason = REASONING_DEEPSEEK_MODELS.has(modelId)
+    ? "reasoning-model-gateway-empty-content"
+    : "unknown-deepseek-model";
+
+  console.log("[chat-provider-resolved]", {
+    modelId,
+    provider: "deepseek-direct",
+    fallbackUsed: true,
+    reason,
+    apiModelId,
+  });
+
+  // Use .chat() to target the Chat Completions API (/v1/chat/completions)
+  // instead of the default Responses API (/v1/responses), which DeepSeek
+  // does not support. Without this, the AI SDK sends requests to
+  // /v1/responses which returns 404, causing the UI to appear stuck.
+  return provider.chat(apiModelId);
 }
