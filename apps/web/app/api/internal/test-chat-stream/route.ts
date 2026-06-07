@@ -9,7 +9,7 @@
  *
  * Used by: /home/hermes/scripts/test_v2_chat_session.py (v2-app-test mode)
  */
-import { generateText, type CoreMessage } from "ai";
+import { generateText } from "ai";
 import { gateway } from "@open-agents/agent";
 
 export const runtime = "nodejs";
@@ -57,8 +57,8 @@ export async function POST(req: Request) {
     );
   }
 
-  const coreMessages: CoreMessage[] = messages.map((m) => ({
-    role: m.role as "user" | "assistant",
+  const coreMessages = messages.map((m) => ({
+    role: m.role as "user" | "assistant" | "system",
     content: m.content,
   }));
 
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     const result = await generateText({
       model,
       messages: coreMessages,
-      maxTokens: 200,
+      maxOutputTokens: 200,
     });
 
     return Response.json({
@@ -83,8 +83,8 @@ export async function POST(req: Request) {
       content: result.text,
       finishReason: result.finishReason,
       usage: {
-        promptTokens: result.usage?.promptTokens,
-        completionTokens: result.usage?.completionTokens,
+        inputTokens: result.usage?.inputTokens,
+        outputTokens: result.usage?.outputTokens,
       },
     });
   } catch (err) {
