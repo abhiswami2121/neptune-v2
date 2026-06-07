@@ -1,6 +1,6 @@
 import { connectSandbox } from "@open-agents/sandbox";
 import { generateText } from "ai";
-import { createDirectModel } from "@open-agents/agent";
+import { gateway } from "@open-agents/agent";
 import { checkBotProtection } from "@/lib/botid";
 import { getSessionById } from "@/lib/db/sessions";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
@@ -58,7 +58,7 @@ export async function POST(
   }
 
   const result = await generateText({
-    model: createDirectModel("deepseek/deepseek-v4-pro"),
+    model: gateway("deepseek/deepseek-v4-pro"),
     prompt: `Generate a concise git commit message for these changes. Use conventional commit format (e.g., "feat:", "fix:", "refactor:"). One line only, max 72 characters.
 
 Session context: ${dbSession.title}

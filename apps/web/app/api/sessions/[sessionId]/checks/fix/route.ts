@@ -7,7 +7,7 @@ import { getUserGitHubToken } from "@/lib/github/token";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { Octokit } from "@octokit/rest";
 import { generateText } from "ai";
-import { createDirectModel } from "@open-agents/agent";
+import { gateway } from "@open-agents/agent";
 
 type RouteContext = {
   params: Promise<{ sessionId: string }>;
@@ -158,7 +158,7 @@ async function compactLog(rawLog: string): Promise<string> {
   }
 
   const result = await generateText({
-    model: createDirectModel("deepseek/deepseek-v4-pro"),
+    model: gateway("deepseek/deepseek-v4-pro"),
     system: LOG_SUMMARIZATION_PROMPT,
     prompt: logInput,
   });

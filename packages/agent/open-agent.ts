@@ -4,7 +4,6 @@ import { z } from "zod";
 import { addCacheControl } from "./context-management";
 import {
   type GatewayModelId,
-  createDirectModel,
   gateway,
   type ProviderOptionsByProvider,
 } from "./models";
@@ -104,11 +103,11 @@ export const openAgent = new ToolLoopAgent({
       ? normalizeAgentModelSelection(options.subagentModel, defaultModelLabel)
       : undefined;
 
-    const callModel = createDirectModel(mainSelection.id, {
+    const callModel = gateway(mainSelection.id, {
       providerOptionsOverrides: mainSelection.providerOptionsOverrides,
     });
     const subagentModel = subagentSelection
-      ? createDirectModel(subagentSelection.id, {
+      ? gateway(subagentSelection.id, {
           providerOptionsOverrides: subagentSelection.providerOptionsOverrides,
         })
       : undefined;

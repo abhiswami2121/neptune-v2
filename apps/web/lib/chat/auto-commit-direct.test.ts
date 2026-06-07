@@ -49,7 +49,6 @@ mock.module("ai", () => ({
 
 mock.module("@open-agents/agent", () => ({
   gateway: () => "mock-model",
-  createDirectModel: () => "mock-model",
 }));
 
 mock.module("@open-agents/sandbox", () => ({
