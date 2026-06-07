@@ -103,7 +103,7 @@ export async function POST(req: Request) {
     const result = await generateText({
       model,
       messages: coreMessages,
-      maxOutputTokens: 200,
+      maxOutputTokens: 1024,
     });
 
     return Response.json({
