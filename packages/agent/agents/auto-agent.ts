@@ -71,13 +71,14 @@ function extractSignals(userMessages: { content: string }[]): ClassificationSign
   // Short question (no code, no complex instructions)
   const isShortQuestion = totalLength < 100 && !lower.includes("```") && !lower.includes("function");
 
-  // Code-related signals
+  // Code-related signals (syntax-level, not general tech terms)
   const codePatterns = [
     "```", "function", "const ", "let ", "var ",
     "import ", "export ", "class ", "interface ",
-    "type ", "react", "component", "api",
-    "route", "endpoint", "database", "query",
-    "css", "html", "jsx", "tsx",
+    "type ", "react", "component", "api endpoint",
+    "route handler", "css", "html", "jsx", "tsx",
+    ".tsx", ".jsx", "useState", "useEffect", "props",
+    "async function", "=>", "node.js", "nodejs",
   ];
   const mentionsCode = codePatterns.some((p) => lower.includes(p));
 
@@ -94,6 +95,8 @@ function extractSignals(userMessages: { content: string }[]): ClassificationSign
     "architecture", "design pattern", "refactor",
     "restructure", "migration", "system design",
     "pipeline", "workflow", "infrastructure",
+    "database", "distributed", "trade-off", "tradeoff",
+    "design", "system", "microservice",
   ];
   const mentionsArchitecture = archPatterns.some((p) => lower.includes(p));
 
@@ -181,13 +184,15 @@ export function classifyTask(
     (signals.mentionsReasoning && signals.hasMultipleSteps) ||
     (signals.mentionsReasoning && signals.isLongPrompt) ||
     (signals.hasComplexInstructions && signals.mentionsCode) ||
-    (signals.mentionsArchitecture && signals.totalLength > 400)
+    (signals.mentionsArchitecture && signals.totalLength > 200) ||
+    (signals.mentionsResearch && signals.mentionsArchitecture)
   ) {
     const reasonParts: string[] = [];
     if (signals.mentionsReasoning) reasonParts.push("reasoning");
     if (signals.hasMultipleSteps) reasonParts.push("multi-step");
     if (signals.hasComplexInstructions) reasonParts.push("complex instructions");
     if (signals.mentionsArchitecture) reasonParts.push("architecture");
+    if (signals.mentionsResearch) reasonParts.push("research");
 
     return {
       taskClass: "reasoning",
