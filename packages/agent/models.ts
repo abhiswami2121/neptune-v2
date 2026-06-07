@@ -263,7 +263,11 @@ export function createDirectModel(
 	if (isDeepSeekModel(modelId)) {
 		const provider = getDeepSeekProvider();
 		const apiModelId = DEEPSEEK_MODEL_MAP[modelId] ?? "deepseek-chat";
-		return provider(apiModelId);
+		// Use .chat() to target the Chat Completions API (/v1/chat/completions)
+		// instead of the default Responses API (/v1/responses), which DeepSeek
+		// does not support. Without this, the AI SDK sends requests to
+		// /v1/responses which returns 404, causing the UI to appear stuck.
+		return provider.chat(apiModelId);
 	}
 
 	return gateway(modelId, options);

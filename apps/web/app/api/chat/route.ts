@@ -96,54 +96,70 @@ export async function POST(req: Request) {
     }
   }
 
-  await Promise.all([
-    persistLatestUserMessage(chatId, messages),
-    persistAssistantMessagesWithToolResults(chatId, messages),
-  ]);
+  try {
+    await Promise.all([
+      persistLatestUserMessage(chatId, messages),
+      persistAssistantMessagesWithToolResults(chatId, messages),
+    ]);
 
-  // Start the durable workflow
-  const run = await start(runAgentWorkflow, [
-    {
-      messages,
+    // Start the durable workflow
+    const run = await start(runAgentWorkflow, [
+      {
+        messages,
+        chatId,
+        sessionId,
+        userId,
+        requestUrl: req.url,
+        authSession: session ?? null,
+        assistantId: generateId(),
+        maxSteps: 500,
+      },
+    ]);
+
+    // Idempotently claim the activeStreamId slot for the workflow we just
+    // started. This succeeds both when the slot is still null and when the
+    // workflow already self-claimed it from inside its first step.
+    const claimed = await claimChatActiveStreamId(chatId, run.runId);
+
+    if (!claimed) {
+      // Another request or workflow run owns the slot — cancel our duplicate.
+      try {
+        const { getRun } = await import("workflow/api");
+        getRun(run.runId).cancel();
+      } catch {
+        // Best-effort cleanup.
+      }
+      return Response.json(
+        { error: "Another workflow is already running for this chat" },
+        { status: 409 },
+      );
+    }
+
+    const stream = createCancelableReadableStream(
+      run.getReadable<WebAgentUIMessageChunk>(),
+    );
+
+    return createUIMessageStreamResponse({
+      stream,
+      headers: {
+        "x-workflow-run-id": run.runId,
+      },
+    });
+  } catch (err) {
+    console.error("[chat-handler-error]", {
+      message: err instanceof Error ? err.message : String(err),
+      name: err instanceof Error ? err.name : "UnknownError",
+      stack: err instanceof Error ? err.stack?.slice(0, 800) : undefined,
       chatId,
       sessionId,
       userId,
-      requestUrl: req.url,
-      authSession: session ?? null,
-      assistantId: generateId(),
-      maxSteps: 500,
-    },
-  ]);
-
-  // Idempotently claim the activeStreamId slot for the workflow we just
-  // started. This succeeds both when the slot is still null and when the
-  // workflow already self-claimed it from inside its first step.
-  const claimed = await claimChatActiveStreamId(chatId, run.runId);
-
-  if (!claimed) {
-    // Another request or workflow run owns the slot — cancel our duplicate.
-    try {
-      const { getRun } = await import("workflow/api");
-      getRun(run.runId).cancel();
-    } catch {
-      // Best-effort cleanup.
-    }
+      timestamp: new Date().toISOString(),
+    });
     return Response.json(
-      { error: "Another workflow is already running for this chat" },
-      { status: 409 },
+      { error: "Internal server error" },
+      { status: 500 },
     );
   }
-
-  const stream = createCancelableReadableStream(
-    run.getReadable<WebAgentUIMessageChunk>(),
-  );
-
-  return createUIMessageStreamResponse({
-    stream,
-    headers: {
-      "x-workflow-run-id": run.runId,
-    },
-  });
 }
 
 type ExistingActiveStreamResolution =

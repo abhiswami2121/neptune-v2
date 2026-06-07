@@ -952,6 +952,23 @@ export async function runAgentWorkflow(options: Options) {
     workflowStatus = wasAborted ? "aborted" : "failed";
     caughtError = error;
 
+    // Structured error log for Vercel runtime diagnostics.
+    // All chat failures land here — grep for '[chat-stream-error]'.
+    console.error("[chat-stream-error]", {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : "UnknownError",
+      stack: error instanceof Error ? error.stack?.slice(0, 800) : undefined,
+      chatId: options.chatId,
+      sessionId: options.sessionId,
+      userId: options.userId,
+      selectedModelId,
+      modelId,
+      workflowRunId,
+      wasAborted,
+      streamClosed,
+      timestamp: new Date().toISOString(),
+    });
+
     if (pendingAssistantResponse.parts.length === 0 && !streamClosed) {
       const errorText = getSetupErrorMessage(error);
       pendingAssistantResponse = {
