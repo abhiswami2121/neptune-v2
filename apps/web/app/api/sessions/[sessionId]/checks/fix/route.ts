@@ -157,7 +157,7 @@ async function compactLog(rawLog: string): Promise<string> {
   }
 
   const result = await generateText({
-    model: gateway("anthropic/claude-haiku-4.5"),
+    model: gateway("deepseek/deepseek-v4-pro"),
     system: LOG_SUMMARIZATION_PROMPT,
     prompt: logInput,
   });
