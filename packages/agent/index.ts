@@ -1,4 +1,4 @@
-export { type GatewayConfig, type GatewayOptions, gateway } from "./models";
+export { createDirectModel, type GatewayConfig, type GatewayOptions, gateway, isDeepSeekModel } from "./models";
 export type {
   AgentModelSelection,
   AgentSandboxContext,

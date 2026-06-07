@@ -9,7 +9,7 @@ import {
   withTemporaryGitHubAuth,
 } from "@open-agents/sandbox";
 import { generateText } from "ai";
-import { gateway } from "@open-agents/agent";
+import { createDirectModel } from "@open-agents/agent";
 import { updateSession } from "@/lib/db/sessions";
 import { generateBranchName, isSafeBranchName } from "@/lib/git/helpers";
 import {
@@ -251,7 +251,7 @@ async function generateCommitMessage(
     }
 
     const result = await generateText({
-      model: gateway("deepseek/deepseek-v4-pro"),
+      model: createDirectModel("deepseek/deepseek-v4-pro"),
       prompt: `Generate a concise git commit message for these changes. Use conventional commit format (e.g., "feat:", "fix:", "refactor:"). One line only, max 72 characters.
 
 Session context: ${sessionTitle}

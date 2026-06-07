@@ -7,6 +7,7 @@ import {
   type LanguageModel,
 } from "ai";
 import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 
 function supportsAdaptiveAnthropicThinking(modelId: string): boolean {
@@ -205,4 +206,65 @@ export function gateway(
   }
 
   return model;
+}
+
+// ---------------------------------------------------------------
+// Direct DeepSeek provider
+// ---------------------------------------------------------------
+// DeepSeek V4 models (pro, flash) stream ONLY reasoning tokens through
+// the Vercel AI Gateway — no content text. The AI SDK receives
+// reasoning-delta chunks but the UI waits for text-delta, appearing
+// "stuck thinking".  Direct API with deepseek-chat alias resolves
+// to the non-reasoning variant that streams normal content.
+//
+// Route ALL DeepSeek-flagged model IDs through the direct DeepSeek
+// API (OpenAI-compatible) instead of the Gateway.
+// ---------------------------------------------------------------
+
+/** Map Gateway model IDs (deepseek/…) to DeepSeek API aliases. */
+const DEEPSEEK_MODEL_MAP: Record<string, string> = {
+	"deepseek/deepseek-v4-pro": "deepseek-chat",
+	"deepseek/deepseek-v4-flash": "deepseek-chat",
+	"deepseek/deepseek-v3.2": "deepseek-chat",
+	"deepseek/deepseek-v3.2-thinking": "deepseek-reasoner",
+	"deepseek/deepseek-v3.1": "deepseek-chat",
+	"deepseek/deepseek-v3.1-terminus": "deepseek-chat",
+	"deepseek/deepseek-v3": "deepseek-chat",
+	"deepseek/deepseek-r1": "deepseek-reasoner",
+};
+
+let _deepseekProvider: ReturnType<typeof createOpenAI> | undefined;
+
+function getDeepSeekProvider(): ReturnType<typeof createOpenAI> {
+	if (!_deepseekProvider) {
+		_deepseekProvider = createOpenAI({
+			apiKey: process.env.DEEPSEEK_API_KEY,
+			baseURL: "https://api.deepseek.com/v1",
+		});
+	}
+	return _deepseekProvider;
+}
+
+export function isDeepSeekModel(modelId: string): boolean {
+	return modelId.startsWith("deepseek/");
+}
+
+/**
+ * Create a language model for the given model ID.
+ *
+ * - DeepSeek models are routed through the direct DeepSeek API
+ *   (OpenAI-compatible endpoint) to avoid Gateway reasoning-only output.
+ * - All other models go through the Vercel AI Gateway.
+ */
+export function createDirectModel(
+	modelId: GatewayModelId,
+	options: GatewayOptions = {},
+): LanguageModel {
+	if (isDeepSeekModel(modelId)) {
+		const provider = getDeepSeekProvider();
+		const apiModelId = DEEPSEEK_MODEL_MAP[modelId] ?? "deepseek-chat";
+		return provider(apiModelId);
+	}
+
+	return gateway(modelId, options);
 }

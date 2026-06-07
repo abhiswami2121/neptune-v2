@@ -1,5 +1,5 @@
 import type { Sandbox } from "@open-agents/sandbox";
-import { gateway } from "@open-agents/agent";
+import { createDirectModel } from "@open-agents/agent";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -301,7 +301,7 @@ export async function generatePullRequestContentFromSandbox(
   let prContent: z.infer<typeof prContentSchema>;
   try {
     const { output } = await generateText({
-      model: gateway("deepseek/deepseek-v4-pro"),
+      model: createDirectModel("deepseek/deepseek-v4-pro"),
       output: Output.object({
         schema: prContentSchema,
       }),
