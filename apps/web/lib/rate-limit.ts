@@ -122,23 +122,46 @@ async function checkRedisRateLimit(
   return rateLimitResponse(ttl > 0 ? ttl : options.windowMs);
 }
 
-function rateLimitUnavailableResponse(): Response | null {
-  if (process.env.NODE_ENV !== "production") {
-    return null;
+// ─── In-memory fallback (single-instance, no Redis required) ───────────────
+
+const inMemoryBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function inMemoryCheckRateLimit({
+  key,
+  limit,
+  windowMs,
+}: RateLimitOptions): Response | null {
+  const now = Date.now();
+  const bucket = inMemoryBuckets.get(key);
+
+  if (!bucket || bucket.resetAt < now) {
+    inMemoryBuckets.set(key, { count: 1, resetAt: now + windowMs });
+    return null; // first request in window, not limited
   }
 
-  return Response.json(
-    { error: "Rate limit unavailable" },
-    { status: 503, headers: { "Retry-After": "30" } },
-  );
+  if (bucket.count >= limit) {
+    const retryAfterMs = Math.max(0, bucket.resetAt - now);
+    return rateLimitResponse(retryAfterMs);
+  }
+
+  bucket.count++;
+  return null;
 }
+
+// Periodic cleanup of expired buckets (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of inMemoryBuckets.entries()) {
+    if (bucket.resetAt < now) inMemoryBuckets.delete(key);
+  }
+}, 5 * 60_000).unref();
 
 export async function checkRateLimit(
   options: RateLimitOptions,
 ): Promise<Response | null> {
   const redisClient = getSharedRedisClient();
   if (!redisClient) {
-    return rateLimitUnavailableResponse();
+    return inMemoryCheckRateLimit(options);
   }
 
   try {
@@ -149,7 +172,7 @@ export async function checkRateLimit(
   } catch (error) {
     resetRedisClient();
     console.error("[rate-limit] Redis check failed:", error);
-    return rateLimitUnavailableResponse();
+    return inMemoryCheckRateLimit(options);
   }
 }
 
