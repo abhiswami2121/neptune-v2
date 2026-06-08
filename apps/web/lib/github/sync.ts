@@ -175,3 +175,47 @@ export async function syncUserInstallations(
 
   return syncableInstallations.length;
 }
+
+/**
+ * Fetch a single installation by ID directly from the GitHub API.
+ * Used as a fallback when the /user/installations list doesn't include
+ * a freshly-created installation (eventual consistency race).
+ */
+export async function fetchSingleInstallation(
+  userToken: string,
+  installationId: number,
+): Promise<{
+  accountLogin: string;
+  accountType: "User" | "Organization";
+  repositorySelection: "all" | "selected";
+  installationUrl: string | null;
+} | null> {
+  try {
+    const url = `https://api.github.com/user/installations/${installationId}`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${userToken}`,
+        Accept: "application/vnd.github.v3+json",
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const json = await response.json();
+    const parsed = userInstallationSchema.safeParse(json);
+    if (!parsed.success || !parsed.data.account) {
+      return null;
+    }
+
+    return {
+      accountLogin: parsed.data.account.login,
+      accountType: normalizeAccountType(parsed.data.account.type),
+      repositorySelection: parsed.data.repository_selection,
+      installationUrl: parsed.data.html_url ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
