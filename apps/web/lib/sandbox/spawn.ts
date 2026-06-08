@@ -8,6 +8,7 @@
  */
 import { VercelSandbox } from "@open-agents/sandbox/vercel";
 import { openAgent } from "@open-agents/agent";
+import { convertToModelMessages } from "ai";
 
 export interface SandboxSpawnResult {
   sandboxId: string;
@@ -16,15 +17,17 @@ export interface SandboxSpawnResult {
 }
 
 /**
- * Map simple {role, content} messages to AI SDK message format.
+ * Convert simple {role, content} messages to AI SDK ModelMessage[] format
+ * that the ToolLoopAgent expects.
  */
-function toCoreMessages(
+async function toModelMessages(
   messages: { role: string; content: string }[],
-): { role: "system" | "user" | "assistant"; content: string }[] {
-  return messages.map((m) => ({
-    role: m.role as "system" | "user" | "assistant",
-    content: m.content,
+) {
+  const uiMessages = messages.map((m) => ({
+    role: m.role as "user" | "assistant" | "system",
+    parts: [{ type: "text" as const, text: m.content }],
   }));
+  return convertToModelMessages(uiMessages);
 }
 
 /**
@@ -77,11 +80,11 @@ export async function spawnSandboxStream(
       enqueue("sandbox.created", { sandboxId, workingDirectory });
 
       try {
-        // Convert messages and run agent
-        const coreMessages = toCoreMessages(messages);
+        // Convert messages to proper ModelMessage format for ToolLoopAgent
+        const modelMessages = await toModelMessages(messages);
 
         const result = await openAgent.stream({
-          messages: coreMessages,
+          messages: modelMessages,
           options: {
             sandbox: sandboxContext,
             ...(modelId ? { model: modelId } : {}),
