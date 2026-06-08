@@ -232,7 +232,44 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: true, updatedUsers: existing.length });
   }
 
-  // partial update with whatever fields are available
+  // New installation with no existing DB row — log details for diagnostics.
+  // The callback handler (syncUserInstallations via OAuth token) is the
+  // primary path for creating installations because the webhook doesn't
+  // know which V2 user to associate with this GitHub account.
+  if (existing.length === 0) {
+    console.warn(
+      "[github/webhook] Received installation event but no DB row exists yet. " +
+        "Installation will be created when the user completes the OAuth callback flow.",
+      {
+        event,
+        action: parsed.data.action,
+        installationId,
+        accountLogin: account?.login ?? "unknown",
+        accountType: account?.type ?? "unknown",
+        repositorySelection: repositorySelection ?? "unknown",
+      },
+    );
+
+    // Still apply partial updates for future use (e.g. when the user links later)
+    if (repositorySelection || installationUrl) {
+      const updated = await updateInstallationsByInstallationId(
+        installationId,
+        {
+          ...(repositorySelection ? { repositorySelection } : {}),
+          ...(installationUrl ? { installationUrl } : {}),
+        },
+      );
+      return Response.json({
+        ok: true,
+        pendingCreate: true,
+        updatedUsers: updated,
+      });
+    }
+
+    return Response.json({ ok: true, pendingCreate: true, reason: "awaiting-oauth-link" });
+  }
+
+  // Existing rows but no account info — partial update
   if (!repositorySelection && !installationUrl) {
     return Response.json({ ok: true, ignored: true, reason: "no-updates" });
   }

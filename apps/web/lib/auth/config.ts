@@ -160,6 +160,7 @@ export const auth = betterAuth({
     github: {
       clientId: process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID ?? "",
       clientSecret: process.env.GITHUB_CLIENT_SECRET ?? "",
+      scope: ["read:org"],
       mapProfileToUser: mapGitHubProfileToUser,
     },
   },

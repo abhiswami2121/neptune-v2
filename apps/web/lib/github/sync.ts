@@ -43,6 +43,9 @@ const GITHUB_403_AUTH_ERROR_PATTERNS = [
   "token was revoked",
   "requires authentication",
   "must grant your oauth app access",
+  "resource not accessible by integration",
+  "must have admin rights",
+  "you must authenticate with an access token",
 ];
 
 function isGitHubInstallations403AuthError(responseText: string): boolean {
