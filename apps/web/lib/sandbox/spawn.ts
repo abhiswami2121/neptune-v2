@@ -1,14 +1,15 @@
 /**
  * Ephemeral sandbox spawner for programmatic sandbox-only coding.
  *
- * Creates a Vercel Sandbox MicroVM, runs the open-agent in it,
+ * Creates a Vercel Sandbox MicroVM, runs a tool-equipped model in it,
  * streams SSE lifecycle + agent events, and cleans up after.
  *
  * Used by: /api/chat when mode === 'sandbox' with bearer auth
  */
 import { VercelSandbox } from "@open-agents/sandbox/vercel";
-import { openAgent } from "@open-agents/agent";
-import { convertToModelMessages } from "ai";
+import { streamText, tool } from "ai";
+import { gateway, defaultModelLabel } from "@open-agents/agent";
+import { z } from "zod";
 
 export interface SandboxSpawnResult {
   sandboxId: string;
@@ -16,28 +17,21 @@ export interface SandboxSpawnResult {
   stream: ReadableStream<Uint8Array>;
 }
 
-/**
- * Convert simple {role, content} messages to AI SDK ModelMessage[] format
- * that the ToolLoopAgent expects.
- */
-async function toModelMessages(
-  messages: { role: string; content: string }[],
-) {
-  const uiMessages = messages.map((m) => ({
-    role: m.role as "user" | "assistant" | "system",
-    parts: [{ type: "text" as const, text: m.content }],
-  }));
-  return convertToModelMessages(uiMessages);
-}
+const MAX_STEPS = 5;
+const BASH_TIMEOUT_MS = 60_000;
+const MAX_OUTPUT_TOKENS = 2000;
+const SANDBOX_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Spawn an ephemeral Vercel Sandbox and run the open-agent in it.
+ * Spawn an ephemeral Vercel Sandbox and run a tool-equipped model in it.
  *
  * Yields SSE events:
  *  - sandbox.created  { sandboxId, workingDirectory }
  *  - text-delta       { textDelta }          (AI SDK raw chunks)
- *  - tool-call        { toolCallId, ... }    (agent tool invocations)
- *  - tool-result      { toolCallId, ... }    (agent tool results)
+ *  - tool-call        { toolCallId, ... }    (model tool invocations)
+ *  - tool-result      { toolCallId, ... }    (model tool results)
+ *  - file.written     { toolCallId, result } (writeFile tool completed)
+ *  - execution.result { toolCallId, result } (bash tool completed)
  *  - finish           { finishReason, usage }
  *  - sandbox.destroyed { sandboxId }
  *  - error            { message }
@@ -48,7 +42,7 @@ export async function spawnSandboxStream(
 ): Promise<SandboxSpawnResult> {
   // 1. Create ephemeral Vercel Sandbox (no git source — empty MicroVM)
   const sandbox = await VercelSandbox.create({
-    timeout: 5 * 60 * 1000, // 5 minute proactive timeout
+    timeout: SANDBOX_TIMEOUT_MS,
     vcpus: 1,
     persistent: false,
     skipGitWorkspaceBootstrap: true,
@@ -57,14 +51,7 @@ export async function spawnSandboxStream(
   const sandboxId = sandbox.id;
   const workingDirectory = sandbox.workingDirectory;
 
-  // 2. Build sandbox context for the agent
-  const sandboxContext = {
-    state: sandbox.getState(),
-    workingDirectory,
-    environmentDetails: sandbox.environmentDetails,
-  };
-
-  // 3. Create SSE stream
+  // 2. Create SSE stream with real sandbox-backed tools
   const encoder = new TextEncoder();
   let isCleanedUp = false;
 
@@ -80,35 +67,78 @@ export async function spawnSandboxStream(
       enqueue("sandbox.created", { sandboxId, workingDirectory });
 
       try {
-        // Convert messages to proper ModelMessage format for ToolLoopAgent
-        const modelMessages = await toModelMessages(messages);
+        const model = gateway(modelId ?? defaultModelLabel);
 
-        const result = await openAgent.stream({
-          messages: modelMessages,
-          options: {
-            sandbox: sandboxContext,
-            ...(modelId ? { model: modelId } : {}),
+        // Convert simple {role, content} messages to CoreMessage format
+        const coreMessages = messages.map((m) => ({
+          role: m.role as "system" | "user" | "assistant",
+          content: m.content,
+        }));
+
+        const result = streamText({
+          model,
+          messages: coreMessages,
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          tools: {
+            writeFile: tool({
+              description:
+                "Write content to a file in the sandbox. Use this to create source code files before executing them.",
+              inputSchema: z.object({
+                filename: z
+                  .string()
+                  .describe("File path relative to the sandbox working directory"),
+                content: z.string().describe("The complete file content to write"),
+              }),
+              execute: async ({ filename, content }) => {
+                await sandbox.writeFile(filename, content, "utf-8");
+                return `File written: ${filename} (${content.length} bytes)`;
+              },
+            }),
+            readFile: tool({
+              description:
+                "Read the contents of a file from the sandbox filesystem.",
+              inputSchema: z.object({
+                filename: z.string().describe("File path to read"),
+              }),
+              execute: async ({ filename }) => {
+                return await sandbox.readFile(filename, "utf-8");
+              },
+            }),
+            bash: tool({
+              description:
+                "Execute a bash command in the sandbox. Use this to compile, run tests, execute scripts, or install dependencies.",
+              inputSchema: z.object({
+                command: z.string().describe("The bash command to execute"),
+              }),
+              execute: async ({ command }) => {
+                const execResult = await sandbox.exec(
+                  command,
+                  workingDirectory,
+                  BASH_TIMEOUT_MS,
+                );
+                return [
+                  `Exit code: ${execResult.exitCode}`,
+                  execResult.stdout
+                    ? `Stdout:\n${execResult.stdout}`
+                    : "(no stdout)",
+                  execResult.stderr
+                    ? `Stderr:\n${execResult.stderr}`
+                    : "(no stderr)",
+                ].join("\n");
+              },
+            }),
           },
+          stopWhen: (ctx) => ctx.steps.length >= MAX_STEPS,
         });
 
-        // Stream raw AI SDK events interleaved with lifecycle tracking
-        let lastToolName: string | null = null;
+        // Stream raw AI SDK events + emit lifecycle events for key tool results
         for await (const part of result.fullStream) {
-          // Track file writes for lifecycle events
-          if (
-            part.type === "tool-call" &&
-            "toolName" in part &&
-            part.toolName === "write"
-          ) {
-            lastToolName = "write";
-          }
-
+          // Track writeFile completions → file.written event
           if (
             part.type === "tool-result" &&
             "toolName" in part &&
-            part.toolName === "write"
+            part.toolName === "writeFile"
           ) {
-            // Emit file.written lifecycle event when write tool completes
             enqueue("file.written", {
               toolCallId:
                 "toolCallId" in part ? part.toolCallId : "unknown",
@@ -116,7 +146,12 @@ export async function spawnSandboxStream(
             });
           }
 
-          if (part.type === "tool-result" && "toolName" in part && part.toolName === "bash") {
+          // Track bash completions → execution.result event
+          if (
+            part.type === "tool-result" &&
+            "toolName" in part &&
+            part.toolName === "bash"
+          ) {
             enqueue("execution.result", {
               toolCallId:
                 "toolCallId" in part ? part.toolCallId : "unknown",
@@ -124,14 +159,14 @@ export async function spawnSandboxStream(
             });
           }
 
-          // Forward raw AI SDK event
+          // Forward raw AI SDK event chunks
           enqueue(part.type, part as unknown as Record<string, unknown>);
         }
 
-        // Emit finish event with metadata
+        // Emit finish event with usage metadata
         const [finishReason, usage] = await Promise.all([
           result.finishReason,
-          result.totalUsage,
+          result.usage,
         ]);
 
         enqueue("finish", {
@@ -156,7 +191,7 @@ export async function spawnSandboxStream(
           sandboxId,
         });
       } finally {
-        // 4. Cleanup: stop and destroy sandbox
+        // 3. Cleanup: stop and destroy sandbox
         if (!isCleanedUp) {
           isCleanedUp = true;
           try {
