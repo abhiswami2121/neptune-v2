@@ -32,10 +32,29 @@ export async function GET() {
 
   const token = await getUserGitHubToken(session.user.id);
   if (!token) {
+    // If the user already has installations from a prior sync, treat them as
+    // "connected" even when the token is temporarily unavailable.  This
+    // prevents reconnect loops where a stale/undecryptable OAuth token
+    // triggers a reconnect dialog that can never be satisfied because the
+    // GitHub App is already installed.
+    //
+    // The missing token will surface as a targeted error when the user
+    // attempts GitHub-backed operations (clone, PR, push, etc.), at which
+    // point a precise re-auth message can guide them instead of a generic
+    // reconnect dialog.
+    if (installations.length > 0) {
+      return NextResponse.json({
+        status: "connected",
+        reason: null,
+        hasInstallations: true,
+        syncedInstallationsCount: null,
+      } satisfies GitHubConnectionStatusResponse);
+    }
+
     return NextResponse.json({
       status: "reconnect_required",
       reason: "token_unavailable",
-      hasInstallations: installations.length > 0,
+      hasInstallations: false,
       syncedInstallationsCount: null,
     } satisfies GitHubConnectionStatusResponse);
   }
