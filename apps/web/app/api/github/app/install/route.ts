@@ -66,7 +66,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const targetId = req.nextUrl.searchParams.get("target_id");
   if (targetId && /^\d+$/.test(targetId)) {
     const installUrl = new URL(
-      `https://github.com/apps/${appSlug}/installations/new/permissions`,
+      `https://github.com/apps/${appSlug}/installations/new`,
     );
     installUrl.searchParams.set("state", state);
     installUrl.searchParams.set("target_id", targetId);
@@ -88,7 +88,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     const accountId = await getGitHubAccountId(session.user.id);
     if (accountId) {
       const installUrl = new URL(
-        `https://github.com/apps/${appSlug}/installations/new/permissions`,
+        `https://github.com/apps/${appSlug}/installations/new`,
       );
       installUrl.searchParams.set("state", state);
       installUrl.searchParams.set("target_id", accountId);
@@ -118,7 +118,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (installations.length === 0) {
     // no installations — route to install page
     const installUrl = new URL(
-      `https://github.com/apps/${appSlug}/installations/new/permissions`,
+      `https://github.com/apps/${appSlug}/installations/new`,
     );
     installUrl.searchParams.set("state", state);
     return redirectWithInstallCookies(installUrl, redirectTo, state);
