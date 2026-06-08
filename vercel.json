@@ -1,5 +1,5 @@
 {
-  "installCommand": "npm install -g pnpm@latest && pnpm install --frozen-lockfile",
+  "installCommand": "corepack enable && pnpm install --frozen-lockfile",
   "buildCommand": "pnpm --filter neptune-v2 build",
   "framework": "nextjs"
 }
