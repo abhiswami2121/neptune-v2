@@ -24,10 +24,90 @@ import {
 import { parseChatRequestBody, requireChatIdentifiers } from "./_lib/request";
 import { runAgentWorkflow } from "@/app/workflows/chat";
 import { persistAssistantMessagesWithToolResults } from "./_lib/persist-tool-results";
+import { spawnSandboxStream } from "@/lib/sandbox/spawn";
 
 type WebAgentUIMessageChunk = InferUIMessageChunk<WebAgentUIMessage>;
 
+/**
+ * Validate the NEPTUNE_TEST_TOKEN bearer auth for programmatic access.
+ * Returns true if the request has a valid bearer token matching the env var.
+ */
+function isProgrammaticAuth(req: Request): boolean {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return false;
+  }
+  const bearerToken = authHeader.slice(7);
+  const expectedToken = process.env.NEPTUNE_TEST_TOKEN;
+  if (!expectedToken) {
+    return false;
+  }
+  return bearerToken === expectedToken;
+}
+
 export async function POST(req: Request) {
+  // Parse body first — needed to check sandbox mode before auth decision
+  const parsedBody = await parseChatRequestBody(req);
+  if (!parsedBody.ok) {
+    return parsedBody.response;
+  }
+
+  const body = parsedBody.body;
+  const isSandboxMode =
+    body.mode === "sandbox" || body.sandboxOnly === true;
+
+  // ---- SANDBOX-ONLY MODE: programmatic auth + ephemeral sandbox ----
+  if (isSandboxMode) {
+    if (!isProgrammaticAuth(req)) {
+      return Response.json(
+        {
+          error:
+            "Sandbox mode requires Authorization: Bearer <NEPTUNE_TEST_TOKEN>",
+        },
+        { status: 401 },
+      );
+    }
+
+    // Extract simple messages from whatever format was sent
+    // Cast: sandbox callers send simple {role, content} objects, not WebAgentUIMessage[]
+    const simpleMessages = extractSimpleMessages(
+      body.messages as unknown as Record<string, unknown>[],
+    );
+
+    if (simpleMessages.length === 0) {
+      return Response.json(
+        { error: "At least one user message is required for sandbox mode" },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const { sandboxId, stream } = await spawnSandboxStream(
+        simpleMessages,
+        body.modelId,
+      );
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "X-Sandbox-Id": sandboxId,
+        },
+      });
+    } catch (err) {
+      console.error("[chat-sandbox-error]", {
+        message: err instanceof Error ? err.message : String(err),
+        timestamp: new Date().toISOString(),
+      });
+      return Response.json(
+        { error: "Failed to spawn sandbox" },
+        { status: 500 },
+      );
+    }
+  }
+
+  // ---- EXISTING AUTHENTICATED CHAT FLOW ----
   // 1. Validate session
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
@@ -41,15 +121,10 @@ export async function POST(req: Request) {
     return Response.json({ error: "Access denied" }, { status: 403 });
   }
 
-  const parsedBody = await parseChatRequestBody(req);
-  if (!parsedBody.ok) {
-    return parsedBody.response;
-  }
-
-  const { messages } = parsedBody.body;
+  const { messages } = body;
 
   // 2. Require sessionId and chatId to ensure sandbox ownership verification
-  const chatIdentifiers = requireChatIdentifiers(parsedBody.body);
+  const chatIdentifiers = requireChatIdentifiers(body);
   if (!chatIdentifiers.ok) {
     return chatIdentifiers.response;
   }
@@ -219,6 +294,50 @@ async function reconcileExistingActiveStream(
   }
 
   return currentStreamId ? { action: "conflict" } : { action: "ready" };
+}
+
+/**
+ * Extract simple {role, content} messages from WebAgentUIMessage[].
+ * Handles both simple format (from API callers) and AI SDK UI format.
+ */
+function extractSimpleMessages(
+  messages: Record<string, unknown>[],
+): { role: string; content: string }[] {
+  return messages
+    .map((m) => {
+      // If already simple format: { role: "user", content: "..." }
+      if (
+        typeof m.content === "string" &&
+        typeof m.role === "string" &&
+        !Array.isArray(m.parts)
+      ) {
+        return {
+          role: m.role as string,
+          content: m.content as string,
+        };
+      }
+
+      // If AI SDK UI message format with parts array
+      const parts = m.parts;
+      if (Array.isArray(parts)) {
+        const textParts = parts
+          .filter((p) => {
+            if (typeof p !== "object" || p === null) return false;
+            return "type" in p && p.type === "text" && "text" in p;
+          })
+          .map((p) => (p as { text: string }).text);
+        return {
+          role: typeof m.role === "string" ? m.role : "user",
+          content: textParts.join("\n"),
+        };
+      }
+
+      return null;
+    })
+    .filter(
+      (m): m is { role: string; content: string } =>
+        m !== null && m.content.length > 0,
+    );
 }
 
 async function persistLatestUserMessage(

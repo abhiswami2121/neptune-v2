@@ -4,6 +4,12 @@ export interface ChatRequestBody {
   messages: WebAgentUIMessage[];
   sessionId?: string;
   chatId?: string;
+  /** When 'sandbox', skips GitHub/PR features and runs in ephemeral sandbox mode */
+  mode?: "sandbox" | "chat";
+  /** Alternative to mode: 'sandbox' — triggers sandbox-only ephemeral execution */
+  sandboxOnly?: boolean;
+  /** Optional model ID override for sandbox mode */
+  modelId?: string;
 }
 
 type ParseChatRequestResult =

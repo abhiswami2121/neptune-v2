@@ -88,7 +88,28 @@ function parseNonNegativeInteger(value: string | null): number | null {
   return Number(value);
 }
 
+/**
+ * Validate the NEPTUNE_TEST_TOKEN bearer auth for programmatic access.
+ */
+function isProgrammaticAuth(req: Request): boolean {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return false;
+  }
+  const bearerToken = authHeader.slice(7);
+  const expectedToken = process.env.NEPTUNE_TEST_TOKEN;
+  if (!expectedToken) {
+    return false;
+  }
+  return bearerToken === expectedToken;
+}
+
 export async function GET(req: Request) {
+  // Programmatic auth: return empty sessions for bearer token access
+  if (isProgrammaticAuth(req)) {
+    return Response.json({ sessions: [], programmatic: true });
+  }
+
   const session = await getServerSession();
   if (!session?.user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
@@ -168,6 +189,18 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  // Programmatic auth: ephemeral session creation not yet supported via API.
+  // Use POST /api/chat with mode=sandbox for programmatic sandbox coding.
+  if (isProgrammaticAuth(req)) {
+    return Response.json(
+      {
+        error:
+          "Programmatic session creation not supported. Use POST /api/chat with mode=sandbox for sandbox coding.",
+      },
+      { status: 400 },
+    );
+  }
+
   const session = await getServerSession();
   if (!session?.user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
