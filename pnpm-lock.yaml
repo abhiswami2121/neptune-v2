@@ -26,6 +26,10 @@ overrides:
 importers:
 
   .:
+    dependencies:
+      '@neptune/core':
+        specifier: file:/home/neptune/neptune-core/neptune-core-1.0.0.tgz
+        version: file:../neptune-core/neptune-core-1.0.0.tgz
     devDependencies:
       oxfmt:
         specifier: ^0.43.0
@@ -1507,6 +1511,10 @@ packages:
   '@napi-rs/nice@1.1.1':
     resolution: {integrity: sha512-xJIPs+bYuc9ASBl+cvGsKbGrJmS6fAKaSZCnT0lhahT5rhA2VVy9/EcIgd2JhtEuFOJNx7UHNn/qiTPTY4nrQw==}
     engines: {node: '>= 10'}
+
+  '@neptune/core@file:../neptune-core/neptune-core-1.0.0.tgz':
+    resolution: {integrity: sha512-7nJp+/b0fyWnD/hmVsjBqp8ABhVLZ0AX6AyUA/Nw3SCJMvebI4SJncYJA0Q4jqawNKmq9AqWpaLTr1L3ZhixyA==, tarball: file:../neptune-core/neptune-core-1.0.0.tgz}
+    version: 1.0.0
 
   '@nestjs/common@11.1.24':
     resolution: {integrity: sha512-9zHxaDDM+oXW9As6UsP5yYB+UqczBmpeSCIFWdPEtEukMnZhxODG1BBjaUcdBB8Sc1uzojSJSJlp3yFp853t1g==}
@@ -7309,6 +7317,10 @@ snapshots:
       '@napi-rs/nice-win32-ia32-msvc': 1.1.1
       '@napi-rs/nice-win32-x64-msvc': 1.1.1
     optional: true
+
+  '@neptune/core@file:../neptune-core/neptune-core-1.0.0.tgz':
+    dependencies:
+      zod: 4.4.3
 
   '@nestjs/common@11.1.24(reflect-metadata@0.2.2)(rxjs@7.8.2)':
     dependencies:

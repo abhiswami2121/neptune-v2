@@ -5,14 +5,34 @@ import { useEffect, useRef, useState } from "react";
 const LINES = [
   { text: "$ neptune build the auth flow", delay: 0, tone: "dim" as const },
   { text: "", delay: 400, tone: "plain" as const },
-  { text: "> analyzing repository structure...", delay: 800, tone: "ok" as const },
-  { text: "> reading existing auth patterns", delay: 1200, tone: "ok" as const },
-  { text: "> creating app/api/auth/route.ts", delay: 1600, tone: "ok" as const },
+  {
+    text: "> analyzing repository structure...",
+    delay: 800,
+    tone: "ok" as const,
+  },
+  {
+    text: "> reading existing auth patterns",
+    delay: 1200,
+    tone: "ok" as const,
+  },
+  {
+    text: "> creating app/api/auth/route.ts",
+    delay: 1600,
+    tone: "ok" as const,
+  },
   { text: "> creating middleware.ts", delay: 2000, tone: "ok" as const },
   { text: "> running pnpm typecheck", delay: 2400, tone: "ok" as const },
   { text: "", delay: 2800, tone: "plain" as const },
-  { text: "auth flow is live. typecheck passes clean.", delay: 3200, tone: "plain" as const },
-  { text: "committed & pushed to feat/auth-flow.", delay: 3600, tone: "plain" as const },
+  {
+    text: "auth flow is live. typecheck passes clean.",
+    delay: 3200,
+    tone: "plain" as const,
+  },
+  {
+    text: "committed & pushed to feat/auth-flow.",
+    delay: 3600,
+    tone: "plain" as const,
+  },
   { text: "", delay: 4000, tone: "plain" as const },
   { text: "$ ", delay: 4400, tone: "dim" as const },
 ];

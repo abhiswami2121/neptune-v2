@@ -54,20 +54,20 @@
 
 /* ── Neptune Code Palette ── */
 :root {
-  --neptune-void: #0A0E1A;
+  --neptune-void: #0a0e1a;
   --neptune-void-pure: #000000;
-  --neptune-cyan: #4FC3F7;
-  --neptune-cyan-bright: #00D4FF;
+  --neptune-cyan: #4fc3f7;
+  --neptune-cyan-bright: #00d4ff;
   --neptune-cyan-glow: rgba(0, 212, 255, 0.4);
   --neptune-cyan-soft: rgba(0, 212, 255, 0.12);
   --glass-deep: rgba(15, 23, 42, 0.6);
   --glass-mid: rgba(15, 23, 42, 0.4);
   --glass-light: rgba(255, 255, 255, 0.04);
   --glass-border: rgba(255, 255, 255, 0.08);
-  --text-pure: #FFFFFF;
-  --text-primary: #F1F5F9;
-  --text-muted: #94A3B8;
-  --text-dim: #64748B;
+  --text-pure: #ffffff;
+  --text-primary: #f1f5f9;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
 
   --radius: 0.625rem;
   --background: oklch(1 0 0);
@@ -192,21 +192,21 @@
     0 50px 90px rgba(0, 0, 0, 0.5), 0 2px 0 rgba(255, 255, 255, 0.04) inset,
     0 -1px 0 rgba(0, 0, 0, 0.2) inset;
   --l-stage-overlay: rgba(0, 0, 0, 0.15);
-  --l-bg: #0A0E1A;
-  --l-surface: #0F172A;
-  --l-surface-2: #0A0E1A;
+  --l-bg: #0a0e1a;
+  --l-surface: #0f172a;
+  --l-surface-2: #0a0e1a;
   --l-surface-3: rgba(255, 255, 255, 0.04);
   --l-surface-4: rgba(255, 255, 255, 0.08);
   --l-border: rgba(255, 255, 255, 0.08);
   --l-border-subtle: rgba(255, 255, 255, 0.04);
-  --l-fg: #FFFFFF;
-  --l-fg-2: #94A3B8;
-  --l-fg-3: #64748B;
+  --l-fg: #ffffff;
+  --l-fg-2: #94a3b8;
+  --l-fg-3: #64748b;
   --l-fg-4: rgba(255, 255, 255, 0.35);
   --l-fg-5: rgba(255, 255, 255, 0.2);
   --l-fg-6: rgba(255, 255, 255, 0.1);
-  --l-accent: #4FC3F7;
-  --l-panel: #0F172A;
+  --l-accent: #4fc3f7;
+  --l-panel: #0f172a;
   --l-panel-fg: rgba(255, 255, 255, 0.85);
   --l-panel-fg-2: rgba(255, 255, 255, 0.6);
   --l-panel-fg-3: rgba(255, 255, 255, 0.4);
@@ -216,8 +216,8 @@
   --l-panel-surface: rgba(255, 255, 255, 0.04);
   --l-panel-active: rgba(255, 255, 255, 0.07);
   --l-panel-dot: rgba(79, 195, 247, 0.5);
-  --l-btn-bg: #0A0E1A;
-  --l-btn-fg: #4FC3F7;
+  --l-btn-bg: #0a0e1a;
+  --l-btn-fg: #4fc3f7;
   --l-btn-hover: rgba(79, 195, 247, 0.15);
   --l-code-bg: #050510;
   --l-window-shadow: 0 40px 80px rgba(0, 0, 0, 0.55);
@@ -275,21 +275,21 @@
     0 50px 90px rgba(0, 0, 0, 0.5), 0 2px 0 rgba(255, 255, 255, 0.04) inset,
     0 -1px 0 rgba(0, 0, 0, 0.2) inset;
   --l-stage-overlay: rgba(0, 0, 0, 0.15);
-  --l-bg: #0A0E1A;
-  --l-surface: #0F172A;
-  --l-surface-2: #0A0E1A;
+  --l-bg: #0a0e1a;
+  --l-surface: #0f172a;
+  --l-surface-2: #0a0e1a;
   --l-surface-3: rgba(255, 255, 255, 0.04);
   --l-surface-4: rgba(255, 255, 255, 0.08);
   --l-border: rgba(255, 255, 255, 0.08);
   --l-border-subtle: rgba(255, 255, 255, 0.04);
-  --l-fg: #FFFFFF;
-  --l-fg-2: #94A3B8;
-  --l-fg-3: #64748B;
+  --l-fg: #ffffff;
+  --l-fg-2: #94a3b8;
+  --l-fg-3: #64748b;
   --l-fg-4: rgba(255, 255, 255, 0.35);
   --l-fg-5: rgba(255, 255, 255, 0.2);
   --l-fg-6: rgba(255, 255, 255, 0.1);
-  --l-accent: #4FC3F7;
-  --l-panel: #0F172A;
+  --l-accent: #4fc3f7;
+  --l-panel: #0f172a;
   --l-panel-fg: rgba(255, 255, 255, 0.85);
   --l-panel-fg-2: rgba(255, 255, 255, 0.6);
   --l-panel-fg-3: rgba(255, 255, 255, 0.4);
@@ -299,8 +299,8 @@
   --l-panel-surface: rgba(255, 255, 255, 0.04);
   --l-panel-active: rgba(255, 255, 255, 0.07);
   --l-panel-dot: rgba(79, 195, 247, 0.5);
-  --l-btn-bg: #0A0E1A;
-  --l-btn-fg: #4FC3F7;
+  --l-btn-bg: #0a0e1a;
+  --l-btn-fg: #4fc3f7;
   --l-btn-hover: rgba(79, 195, 247, 0.15);
   --l-code-bg: #050510;
   --l-window-shadow: 0 40px 80px rgba(0, 0, 0, 0.55);
@@ -463,17 +463,31 @@
 /* Neptune body background — radial void gradient */
 .neptune-body {
   background:
-    radial-gradient(ellipse 900px 420px at 26% 18%, rgba(79, 195, 247, 0.06) 0%, transparent 62%),
-    radial-gradient(ellipse 720px 520px at 82% 72%, rgba(0, 212, 255, 0.04) 0%, transparent 58%),
-    var(--neptune-void, #0A0E1A);
+    radial-gradient(
+      ellipse 900px 420px at 26% 18%,
+      rgba(79, 195, 247, 0.06) 0%,
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 720px 520px at 82% 72%,
+      rgba(0, 212, 255, 0.04) 0%,
+      transparent 58%
+    ),
+    var(--neptune-void, #0a0e1a);
   min-height: 100vh;
 }
 
 /* ── Neptune Design Elevation — Aurora & Motion ── */
 @keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  50% { transform: translateX(0%); }
-  100% { transform: translateX(100%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 @keyframes typeIn {
@@ -488,33 +502,54 @@
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-8px); }
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
 }
 
 @keyframes glow-pulse {
-  0%, 100% { box-shadow: 0 0 40px rgba(0,212,255,0.4), 0 0 0 1px rgba(255,255,255,0.1); }
-  50% { box-shadow: 0 0 60px rgba(0,212,255,0.55), 0 0 0 1px rgba(255,255,255,0.15); }
+  0%,
+  100% {
+    box-shadow:
+      0 0 40px rgba(0, 212, 255, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 60px rgba(0, 212, 255, 0.55),
+      0 0 0 1px rgba(255, 255, 255, 0.15);
+  }
 }
 
 /* ── Aurora Orbit Animation ── */
 @keyframes aurora-orbit {
-  from { transform: rotate(0deg) translateX(30px) rotate(0deg); }
-  to { transform: rotate(360deg) translateX(30px) rotate(-360deg); }
+  from {
+    transform: rotate(0deg) translateX(30px) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(30px) rotate(-360deg);
+  }
 }
 
 /* ── Glass card hover lift ── */
 .glass-card-hover {
-  transition: transform 200ms ease-out, border-color 200ms ease-out, box-shadow 200ms ease-out;
+  transition:
+    transform 200ms ease-out,
+    border-color 200ms ease-out,
+    box-shadow 200ms ease-out;
 }
 
 .glass-card-hover:hover {
   transform: translateY(-2px);
   border-color: rgba(79, 195, 247, 0.4);
   box-shadow:
-    0 4px 32px rgba(0,0,0,0.4),
-    0 0 20px rgba(0,212,255,0.15),
-    0 0 0 1px rgba(255,255,255,0.06) inset;
+    0 4px 32px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(0, 212, 255, 0.15),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
 }
 
 /* ── Respect reduced motion ── */
@@ -528,6 +563,9 @@
   }
 
   @keyframes shimmer {
-    0%, 100% { transform: translateX(-100%); }
+    0%,
+    100% {
+      transform: translateX(-100%);
+    }
   }
 }

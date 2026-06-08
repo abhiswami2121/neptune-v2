@@ -38,9 +38,7 @@ export function GlassButton({
           aria-hidden="true"
         />
       )}
-      <span className="relative z-10 flex items-center gap-2">
-        {children}
-      </span>
+      <span className="relative z-10 flex items-center gap-2">{children}</span>
     </button>
   );
 }

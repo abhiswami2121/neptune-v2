@@ -69,7 +69,8 @@ export function SignedOutHero() {
                   letterSpacing: "-0.05em",
                   opacity: mounted ? 1 : 0,
                   transform: mounted ? "translateY(0)" : "translateY(20px)",
-                  transition: "opacity 600ms ease-out, transform 600ms ease-out",
+                  transition:
+                    "opacity 600ms ease-out, transform 600ms ease-out",
                 }}
               >
                 The coding agent

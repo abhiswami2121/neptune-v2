@@ -72,9 +72,10 @@ export function AuroraBackground() {
   useAnimationFrame((delta) => {
     if (!containerRef.current) return;
     const seconds = delta / 1000;
-    const els = containerRef.current.querySelectorAll<HTMLDivElement>(
-      "[data-aurora-orb]",
-    );
+    const els =
+      containerRef.current.querySelectorAll<HTMLDivElement>(
+        "[data-aurora-orb]",
+      );
 
     els.forEach((el, i) => {
       const orb = ORBS[i];
@@ -92,8 +93,7 @@ export function AuroraBackground() {
 
       const xOffset = Math.sin(phase) * 8;
       const yOffset = Math.cos(phaseY) * 10;
-      const opacityPulse =
-        orb.opacity + Math.sin(phase * 1.3) * 0.08;
+      const opacityPulse = orb.opacity + Math.sin(phase * 1.3) * 0.08;
 
       el.style.transform = `translate(${xOffset}px, ${yOffset}px)`;
       el.style.opacity = String(Math.max(0.1, opacityPulse));

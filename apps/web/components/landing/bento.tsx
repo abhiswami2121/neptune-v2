@@ -126,9 +126,7 @@ export function LandingBento() {
               key={item.id}
               className={`flex h-full flex-col border-b border-(--l-border) px-6 py-8 md:px-10 md:py-9 ${
                 index % 3 === 0 ? "" : "lg:border-l lg:border-l-(--l-border)"
-              } ${
-                index >= 3 ? "md:border-b-0" : ""
-              } ${
+              } ${index >= 3 ? "md:border-b-0" : ""} ${
                 index % 2 === 1 ? "md:border-l md:border-l-(--l-border)" : ""
               }`}
             >

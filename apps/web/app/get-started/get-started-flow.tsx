@@ -97,8 +97,8 @@ export function GetStartedFlow() {
           </span>
         </div>
         <p className="hidden max-w-sm text-sm leading-relaxed text-zinc-600 md:block">
-          Long-running coding agents with live sandbox preview, auto-PRs, and Vercel-native deployment.
-          SDK, Gateway, Sandbox, and Workflow SDK.
+          Long-running coding agents with live sandbox preview, auto-PRs, and
+          Vercel-native deployment. SDK, Gateway, Sandbox, and Workflow SDK.
         </p>
       </div>
 
