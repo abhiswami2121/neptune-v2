@@ -25,6 +25,7 @@ import { parseChatRequestBody, requireChatIdentifiers } from "./_lib/request";
 import { runAgentWorkflow } from "@/app/workflows/chat";
 import { persistAssistantMessagesWithToolResults } from "./_lib/persist-tool-results";
 import { spawnSandboxStream } from "@/lib/sandbox/spawn";
+import { loadRelevantSkills, buildSkillPromptAugmentation } from "@/lib/skills/router";
 
 type WebAgentUIMessageChunk = InferUIMessageChunk<WebAgentUIMessage>;
 
@@ -79,6 +80,22 @@ export async function POST(req: Request) {
         { error: "At least one user message is required for sandbox mode" },
         { status: 400 },
       );
+    }
+
+    // Load relevant skills based on the user's prompt
+    const lastUserMessage = simpleMessages
+      .filter((m) => m.role === "user")
+      .map((m) => m.content)
+      .join("\n");
+
+    const { skillContents } = await loadRelevantSkills(lastUserMessage);
+    if (skillContents.length > 0) {
+      const skillAugmentation = buildSkillPromptAugmentation(skillContents);
+      // Prepend skill content as a system message
+      simpleMessages.unshift({
+        role: "system",
+        content: skillAugmentation,
+      });
     }
 
     try {
