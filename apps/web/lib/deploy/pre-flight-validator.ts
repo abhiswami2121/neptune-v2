@@ -540,3 +540,59 @@ export async function watchPostDeployAndRemediate(
     error: `Deployment did not complete within ${MAX_WATCH_TIME_MS / 1000}s`,
   };
 }
+
+// ─── Pre-Commit Gate (Chat Orchestrator Integration) ─────────────────────────
+
+/**
+ * Pre-commit validation gate — called by the sandbox commit workflow
+ * before every auto-commit. Runs secret scan + CVE check + build dry-run.
+ *
+ * Returns `{ ok: true }` if safe to commit, or `{ ok: false, reasons }`
+ * with specific blockers that must be resolved first.
+ *
+ * This is the primary integration point with V2's chat orchestrator:
+ * EVERY sandbox commit flows through this gate.
+ */
+export async function preCommitGate(
+  repoPath: string,
+  changedFiles: Array<{ path: string; diff: string }>,
+  packageJson: Record<string, unknown>,
+): Promise<{ ok: boolean; reasons: string[]; warnings: string[] }> {
+  const result = await preFlightValidate(repoPath, changedFiles, packageJson);
+
+  const reasons: string[] = [];
+  const warnings: string[] = [];
+
+  // Blocking errors = stop the commit
+  for (const err of result.blocking) {
+    reasons.push(`[${err.type}] ${err.file}${err.line ? `:${err.line}` : ""}: ${err.description}`);
+  }
+
+  // Auto-fixable errors = warn but don't block
+  for (const err of result.autoFixable) {
+    warnings.push(`[${err.type}] ${err.file}: ${err.description}`);
+  }
+
+  // Warnings
+  for (const w of result.warnings) {
+    warnings.push(`[${w.type}] ${w.file}: ${w.description}`);
+  }
+
+  if (reasons.length > 0) {
+    return {
+      ok: false,
+      reasons,
+      warnings,
+    };
+  }
+
+  if (warnings.length > 0) {
+    return {
+      ok: true,
+      reasons: [],
+      warnings,
+    };
+  }
+
+  return { ok: true, reasons: [], warnings: [] };
+}
