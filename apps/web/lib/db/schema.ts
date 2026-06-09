@@ -398,3 +398,32 @@ export const usageEvents = pgTable("usage_events", {
 
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;
+
+// Coding Agent Memory — cross-session context for V2 coding agent
+export const codingAgentMemory = pgTable(
+  "coding_agent_memory",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    repo: text("repo").notNull(),
+    sessionId: text("session_id").notNull(),
+    factType: text("fact_type", {
+      enum: ["preference", "decision", "pattern", "gotcha"],
+    })
+      .notNull(),
+    fact: text("fact").notNull(),
+    embedding: text("embedding"), // JSON string of 1536-dim vector
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastAccessedAt: timestamp("last_accessed_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    userRepoIdx: index("cam_user_repo_idx").on(table.userId, table.repo),
+    factTypeIdx: index("cam_fact_type_idx").on(table.factType),
+    createdAtIdx: index("cam_created_at_idx").on(table.createdAt),
+  }),
+);
+
+export type CodingAgentMemory = typeof codingAgentMemory.$inferSelect;
+export type NewCodingAgentMemory = typeof codingAgentMemory.$inferInsert;
