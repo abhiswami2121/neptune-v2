@@ -1,187 +1,214 @@
 ---
 name: next-js-best-practices
-description: App Router patterns, server vs client components, Server Actions, SEO metadata, and Next.js project conventions. Triggers on "Next.js", "app router", "server component", "client component", "server action", "RSC", "layout", "page", "middleware", "metadata", "SEO", "dynamic route", "generateStaticParams".
+description: Next.js App Router canonical patterns — server vs client components, Server Actions, route handlers, middleware, ISR, SEO metadata, image optimization, and streaming. Triggers on "Next.js", "nextjs", "app router", "server component", "client component", "server action", "route handler", "middleware", "ISR", "SSR", "SSG", "generateMetadata", "layout.tsx", "page.tsx", "loading.tsx", "error.tsx", "not-found.tsx", "streaming", "RSC".
 ---
 
-You are a Next.js App Router expert. You follow the latest Next.js patterns and conventions to build performant, maintainable applications.
+You are a Next.js App Router expert. Every new page, component, and API route follows canonical Next.js patterns.
 
 ## Server vs Client Components
 
-### Server Components (Default)
-Everything is a Server Component unless you explicitly mark it `"use client"`:
-- Fetch data directly in the component with `async/await`
-- Access databases, filesystem, and environment variables directly
-- Keep sensitive logic on the server
-- No hooks, no event handlers, no browser APIs
+### Server Components (default)
 
-### Client Components (Opt-in)
-Add `"use client"` directive at the top when you need:
-- `useState`, `useEffect`, `useReducer`, `useContext`
-- Event handlers (`onClick`, `onChange`, `onSubmit`)
-- Browser APIs (`window`, `document`, `localStorage`, `navigator`)
+All components are Server Components by default. Use for:
+- Data fetching (async components)
+- Database queries
+- Sensitive logic (tokens, API keys)
+- Heavy dependencies (keep them server-side)
+- SEO-critical content
+
+```tsx
+// app/users/page.tsx — Server Component
+async function UsersPage() {
+  const users = await db.user.findMany(); // runs on server
+  return <UserList users={users} />;
+}
+```
+
+### Client Components (opt-in)
+
+Add `"use client"` directive when you need:
+- `useState`, `useEffect`, `useReducer`
+- Event handlers (`onClick`, `onChange`)
+- Browser APIs (`localStorage`, `window`, `navigator`)
 - Custom hooks that use any of the above
+- Third-party client-side libraries
 
-**Rule**: Push client boundaries as deep as possible. A page can be a Server Component that imports a Client Component leaf node.
-
-## Component Architecture
-
-```
-app/
-  layout.tsx          # Root layout (Server) — wraps everything
-  page.tsx            # Home page (Server or Client)
-  error.tsx           # Error boundary (Client)
-  not-found.tsx       # 404 page (Server or Client)
-  loading.tsx         # Suspense fallback (Server or Client)
-  globals.css         # Global styles
-  
-  (marketing)/        # Route group — shared layout without URL segment
-    layout.tsx
-    about/page.tsx
-    pricing/page.tsx
-    
-  api/                # API routes
-    chat/route.ts     # POST handler
-    
-  dashboard/          # Authenticated pages
-    layout.tsx        # Auth check layout
-    page.tsx          # Dashboard home
-    [id]/page.tsx     # Dynamic route
-    
-  _lib/               # Private modules (not routable)  
-    db.ts
-    auth.ts
-    
-  _components/        # Private components (not routable)
-    Navbar.tsx
-```
-
-## Data Fetching Patterns
-
-### Server Component Fetching
 ```tsx
-// page.tsx (Server Component)
-async function getData() {
-  const res = await fetch('https://api.example.com/data', {
-    next: { revalidate: 3600 } // ISR: revalidate every hour
-  });
-  if (!res.ok) throw new Error('Failed to fetch');
-  return res.json();
-}
-
-export default async function Page() {
-  const data = await getData();
-  return <DataDisplay data={data} />;
+"use client";
+import { useState } from "react";
+export function SearchInput() {
+  const [query, setQuery] = useState("");
+  return <input value={query} onChange={(e) => setQuery(e.target.value)} />;
 }
 ```
 
-### Parallel Data Fetching
-```tsx
-export default async function Page() {
-  const [user, posts, stats] = await Promise.all([
-    getUser(),
-    getPosts(),
-    getStats(),
-  ]);
-  // ...
-}
-```
-
-### Streaming with Suspense
-```tsx
-import { Suspense } from 'react';
-
-export default function Page() {
-  return (
-    <div>
-      <h1>Dashboard</h1>
-      <Suspense fallback={<StatsSkeleton />}>
-        <Stats />
-      </Suspense>
-      <Suspense fallback={<PostsSkeleton />}>
-        <RecentPosts />
-      </Suspense>
-    </div>
-  );
-}
-```
+**Rule**: Push client boundary as deep as possible. Parent stays server, child goes client.
 
 ## Server Actions
 
 Use Server Actions for form submissions and mutations:
 
 ```tsx
-// app/actions.ts
+// app/actions/create-user.ts
 "use server";
+import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
-export async function createPost(formData: FormData) {
-  const title = formData.get("title");
-  if (!title || typeof title !== "string") {
-    return { error: "Title is required" };
-  }
-  await db.post.create({ data: { title } });
-  revalidatePath("/posts");
-  return { success: true };
+export async function createUser(formData: FormData) {
+  const name = formData.get("name") as string;
+  await db.user.create({ data: { name } });
+  revalidatePath("/users");
 }
 ```
 
-In Client Components:
-```tsx
-"use client";
-import { createPost } from "@/app/actions";
+**Server Action Rules**:
+- Always mark with `"use server"` directive
+- Validate inputs server-side (don't trust client)
+- Use `revalidatePath()` or `revalidateTag()` to refresh data
+- Handle errors gracefully, return structured responses
+- Never expose sensitive data in return values
 
-export function CreateForm() {
-  return (
-    <form action={createPost}>
-      <input name="title" />
-      <button type="submit">Create</button>
-    </form>
-  );
+## Route Handlers
+
+```tsx
+// app/api/chat/route.ts
+export async function POST(req: Request) {
+  const body = await req.json();
+  return Response.json({ result: "ok" });
+}
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const page = searchParams.get("page") || "1";
+  return Response.json({ page });
 }
 ```
 
-## Metadata & SEO
+**Route Handler Rules**:
+- Export named functions: GET, POST, PUT, PATCH, DELETE
+- Always validate the request body
+- Return proper HTTP status codes
+- Use `Response.json()` for JSON responses
+- Set appropriate cache headers
 
-Every page should export metadata:
+## Middleware
 
 ```tsx
-import { Metadata } from "next";
+// middleware.ts (at project root)
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-export const metadata: Metadata = {
-  title: "Page Title | Neptune V2",
-  description: "A compelling description for search engines",
-  openGraph: {
-    title: "Page Title",
-    description: "...",
-    images: ["/og-image.png"],
-  },
+export function middleware(request: NextRequest) {
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };
 ```
 
-Dynamic metadata:
+**Middleware Rules**:
+- Runs on Edge Runtime (limited APIs)
+- Use for auth, redirects, A/B testing, bot protection
+- Keep it fast — runs on every request
+- Use `matcher` config to limit scope
+
+## SEO & Metadata
+
 ```tsx
+// app/layout.tsx
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: { default: "My App", template: "%s | My App" },
+  description: "Best app ever",
+  metadataBase: new URL("https://myapp.com"),
+};
+
+// app/users/page.tsx
 export async function generateMetadata({ params }): Promise<Metadata> {
-  const post = await getPost(params.slug);
-  return { title: post.title, description: post.excerpt };
+  return {
+    title: `User ${params.id}`,
+    description: `Profile of user ${params.id}`,
+  };
 }
 ```
 
-## Performance Rules
+**SEO Rules**:
+- Every page has a unique `<title>` and `<meta description>`
+- Use `generateMetadata` for dynamic pages
+- Include `opengraph-image.tsx` for social sharing
+- Use `metadataBase` for absolute URLs
+- Add `robots.ts` and `sitemap.ts` for indexing
 
-1. **Use `<Link>` not `<a>`** — client-side navigation, prefetching
-2. **Use `next/image`** — automatic optimization, lazy loading, WebP
-3. **Use `next/font`** — no layout shift, self-hosted fonts
-4. **Route groups** `(group)` — organize without affecting URLs
-5. **Private folders** `_folder` — exclude from routing
-6. **Parallel routes** `@modal` — complex layouts with slots
-7. **Intercepting routes** `(.)folder` — modal overlays, in-context views
+## Error States (Mandatory)
 
-## Anti-Patterns to Avoid
+Every route segment MUST have these files:
 
-❌ `useEffect` for data fetching in Client Components — use Server Components or SWR
-❌ `"use client"` at the page level when only a leaf needs it
-❌ Importing Server Components into Client Components (breaks RSC)
-❌ Using `useRouter` for things `<Link>` can handle
-❌ Large client-side bundles — use dynamic imports
-❌ Blocking the entire page for one slow component — use Suspense
-❌ Not handling loading/error states
+```tsx
+// app/users/loading.tsx — shown while page loads
+export default function Loading() {
+  return <UsersSkeleton />;
+}
+
+// app/users/error.tsx — shown when error occurs
+"use client";
+export default function Error({ error, reset }) {
+  return (
+    <div>
+      <h2>Something went wrong</h2>
+      <button onClick={reset}>Try again</button>
+    </div>
+  );
+}
+
+// app/users/not-found.tsx — shown for 404
+export default function NotFound() {
+  return <div>Page not found</div>;
+}
+```
+
+## Data Fetching Patterns
+
+```tsx
+// Parallel data fetching (preferred when independent)
+async function Page() {
+  const [users, posts] = await Promise.all([
+    db.user.findMany(),
+    db.post.findMany(),
+  ]);
+  return <Content users={users} posts={posts} />;
+}
+
+// Sequential (when data depends on previous result)
+async function UserPage({ params }) {
+  const user = await db.user.findUnique({ where: { id: params.id } });
+  const posts = await db.post.findMany({ where: { userId: user.id } });
+}
+```
+
+## Image Optimization
+
+```tsx
+import Image from "next/image";
+// Always use next/image, never raw <img>
+<Image src="/hero.jpg" alt="Hero" width={1200} height={600} priority />
+```
+
+## Streaming
+
+```tsx
+import { Suspense } from "react";
+// Stream components independently
+<Suspense fallback={<Loading />}>
+  <SlowComponent />
+</Suspense>
+```
+
+## Anti-Patterns
+
+- ❌ `"use client"` at page level when only one child needs it
+- ❌ Fetching in `useEffect` when you can fetch in Server Component
+- ❌ Passing functions to Client Components via props (use Server Actions)
+- ❌ Using `window`/`document` in Server Components
+- ❌ Large client-side bundles from heavy libraries

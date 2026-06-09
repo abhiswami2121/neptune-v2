@@ -1,36 +1,55 @@
 ---
 name: shadcn-ui-mastery
-description: Canonical component usage, theme customization via CSS variables, dark mode patterns, and component composition. Triggers on "shadcn", "shadcn/ui", "ui component", "Button", "Dialog", "Dropdown", "theme", "dark mode", "CSS variables", "radix-ui", "component library".
+description: Canonical shadcn/ui component usage, theme customization via CSS variables, dark mode patterns, form handling with react-hook-form, and composition patterns. Triggers on "shadcn", "shadcn/ui", "ui component", "button component", "dialog", "dropdown", "form component", "toast", "sheet", "command palette", "theme", "dark mode", "CSS variables", "radix ui".
 ---
 
-You are a shadcn/ui expert. You build interfaces using shadcn/ui's component library with Radix UI primitives and CSS variable theming.
+You are a shadcn/ui expert. Every UI component uses canonical shadcn/ui patterns with proper theming and accessibility.
 
-## Core Principles
+## Component Architecture
 
-1. **Every component is copy-pasted into your project** — not a dependency. You own the code.
-2. **Built on Radix UI primitives** — accessible by default, WAI-ARIA compliant.
-3. **Styled with Tailwind CSS + CSS variables** — fully customizable via CSS custom properties.
-4. **Composable** — combine components freely, they work together.
+shadcn/ui components live in `components/ui/` and are built on Radix UI primitives:
+
+```
+components/
+├── ui/
+│   ├── button.tsx
+│   ├── dialog.tsx
+│   ├── dropdown-menu.tsx
+│   ├── form.tsx
+│   ├── input.tsx
+│   └── ...
+├── settings-form.tsx  ← compositions
+└── user-nav.tsx       ← compositions
+```
+
+## Import Pattern
+
+Always import from the local component registry:
+
+```tsx
+// ✅ Correct
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+// ❌ Wrong — never import Radix directly for basic components
+import * as Dialog from "@radix-ui/react-dialog";
+```
 
 ## Adding Components
 
 ```bash
-npx shadcn@latest add button card dialog dropdown-menu
+npx shadcn-ui@latest add button dialog form
 ```
 
-Components are added to `@/components/ui/`. You can then customize them directly.
+## Theming with CSS Variables
 
-## Theme System
-
-shadcn/ui uses CSS variables for theming. Variables are in `globals.css`:
+shadcn/ui uses CSS custom properties for theming. Define in `app/globals.css`:
 
 ```css
 @layer base {
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
     --primary: 222.2 47.4% 11.2%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
@@ -40,6 +59,7 @@ shadcn/ui uses CSS variables for theming. Variables are in `globals.css`:
     --accent: 210 40% 96.1%;
     --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
@@ -49,105 +69,64 @@ shadcn/ui uses CSS variables for theming. Variables are in `globals.css`:
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-    /* ... dark variants */
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    /* ... complete dark theme tokens */
   }
 }
 ```
 
-**Rule**: Always use HSL values. Never use hex or rgb for theme variables.
+**Rule**: Always add new theme tokens to both `:root` and `.dark` blocks. Never hardcode colors.
 
 ## Dark Mode
 
-```tsx
-// providers/theme-provider.tsx
-"use client";
-import { ThemeProvider as NextThemesProvider } from "next-themes";
+Use `next-themes` for dark mode:
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+```tsx
+// components/theme-provider.tsx
+"use client";
+import { ThemeProvider } from "next-themes";
+
+export function Providers({ children }) {
   return (
-    <NextThemesProvider attribute="class" defaultTheme="system" enableSystem>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       {children}
-    </NextThemesProvider>
+    </ThemeProvider>
   );
 }
 ```
 
-Wrap root layout: `<ThemeProvider>{children}</ThemeProvider>`
+## Form Pattern (react-hook-form + zod)
 
-Toggle with `useTheme()` from `next-themes`.
-
-## Common Component Patterns
-
-### Button
 ```tsx
-<Button variant="default">Default</Button>
-<Button variant="destructive">Delete</Button>
-<Button variant="outline">Outline</Button>
-<Button variant="secondary">Secondary</Button>
-<Button variant="ghost">Ghost</Button>
-<Button variant="link">Link</Button>
-<Button size="sm">Small</Button>
-<Button size="lg">Large</Button>
-<Button size="icon"><SettingsIcon /></Button>
-<Button loading>Submitting...</Button> {/* Neptune V2 custom */}
-```
+"use client";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Button } from "@/components/ui/button";
+import {
+  Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 
-### Dialog (Modal)
-```tsx
-<Dialog>
-  <DialogTrigger asChild>
-    <Button variant="outline">Open</Button>
-  </DialogTrigger>
-  <DialogContent>
-    <DialogHeader>
-      <DialogTitle>Title</DialogTitle>
-      <DialogDescription>Description here.</DialogDescription>
-    </DialogHeader>
-    {/* Content */}
-    <DialogFooter>
-      <Button type="submit">Save</Button>
-    </DialogFooter>
-  </DialogContent>
-</Dialog>
-```
-
-### Card
-```tsx
-<Card>
-  <CardHeader>
-    <CardTitle>Title</CardTitle>
-    <CardDescription>Description</CardDescription>
-  </CardHeader>
-  <CardContent>
-    <p>Card content</p>
-  </CardContent>
-  <CardFooter>
-    <Button>Action</Button>
-  </CardFooter>
-</Card>
-```
-
-### Form (with react-hook-form + zod)
-```tsx
 const formSchema = z.object({
   username: z.string().min(2).max(50),
+  email: z.string().email(),
 });
 
-type FormData = z.infer<typeof formSchema>;
-
-export function ProfileForm() {
-  const form = useForm<FormData>({
+export function SettingsForm() {
+  const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { username: "" },
+    defaultValues: { username: "", email: "" },
   });
 
-  function onSubmit(values: FormData) {
+  function onSubmit(values: z.infer<typeof formSchema>) {
     console.log(values);
   }
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
         <FormField
           control={form.control}
           name="username"
@@ -157,45 +136,71 @@ export function ProfileForm() {
               <FormControl>
                 <Input placeholder="shadcn" {...field} />
               </FormControl>
-              <FormDescription>Your public display name.</FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit">Submit</Button>
+        <Button type="submit">Save</Button>
       </form>
     </Form>
   );
 }
 ```
 
-### Toast / Sonner
-```tsx
-import { toast } from "sonner";
+## Common Component Patterns
 
-toast("Event has been created.");
-toast.success("Success!");
-toast.error("Something went wrong.");
-toast.promise(saveData(), {
-  loading: "Saving...",
-  success: "Saved!",
-  error: "Error saving",
-});
+### Dialog/Modal
+```tsx
+<Dialog open={isOpen} onOpenChange={setIsOpen}>
+  <DialogTrigger asChild><Button>Open</Button></DialogTrigger>
+  <DialogContent>
+    <DialogHeader><DialogTitle>Title</DialogTitle></DialogHeader>
+  </DialogContent>
+</Dialog>
 ```
 
-## Composition Rules
+### Dropdown Menu
+```tsx
+<DropdownMenu>
+  <DropdownMenuTrigger><Button>Menu</Button></DropdownMenuTrigger>
+  <DropdownMenuContent>
+    <DropdownMenuItem>Profile</DropdownMenuItem>
+    <DropdownMenuSeparator />
+    <DropdownMenuItem>Log out</DropdownMenuItem>
+  </DropdownMenuContent>
+</DropdownMenu>
+```
 
-1. **Always use the `asChild` prop** when composing with custom elements
-2. **Don't fight the defaults** — shadcn patterns exist for a reason
-3. **Style with className** — use Tailwind, not inline styles
-4. **Keep components in `@/components/ui/`** — don't scatter shadcn components
-5. **One component per file** — follow the existing file structure
+### Toast Notifications
+```tsx
+import { toast } from "sonner";
+toast.success("Settings saved!");
+toast.error("Failed to save");
+```
 
-## Anti-Patterns
+## Composition: Never Modify UI Components Directly
 
-❌ Importing components directly from `@radix-ui/react-*` — use the shadcn wrapper
-❌ Removing the `cn()` utility — it merges Tailwind classes correctly
-❌ Using raw HTML elements when a shadcn component exists
-❌ Hardcoding colors — use theme variables: `bg-primary` not `bg-blue-500`
-❌ Skipping `DialogTitle`/`DialogDescription` — required for accessibility
-❌ Not handling loading states on buttons
+Instead of modifying `components/ui/button.tsx`, compose:
+
+```tsx
+// ✅ Create a wrapper
+export function SubmitButton({ children, ...props }) {
+  return <Button variant="default" size="lg" className="w-full" {...props}>{children}</Button>;
+}
+```
+
+## Responsive Patterns
+
+Use Tailwind breakpoints with shadcn:
+```tsx
+<DialogContent className="sm:max-w-[425px] lg:max-w-[600px]">
+<SheetContent side="bottom" className="h-[80vh] sm:h-auto sm:max-w-md">
+```
+
+## Do NOT
+
+- ❌ Modify shadcn source files in `components/ui/`
+- ❌ Use Radix components directly (use the wrapper)
+- ❌ Hardcode colors — always use `bg-primary`, `text-foreground`, etc.
+- ❌ Forget to add both light and dark variants for custom styles
+- ❌ Use `@radix-ui` imports in page components

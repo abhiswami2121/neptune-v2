@@ -1,101 +1,130 @@
 ---
 name: vercel-deploy-orchestration
-description: Watch deploy after PR merge, parse error classes, and auto-remediate common failures. Triggers on "deploy", "Vercel", "preview deploy", "production deploy", "deployment", "ship", "launch", "push to production", "merge and deploy", "auto-deploy".
+description: Vercel deployment lifecycle management — watch deploy after push/PR merge, parse error classes, auto-remediate common failures, verify production health. Triggers on "deploy", "deploy to Vercel", "ship it", "push to prod", "preview deploy", "vercel deploy", "deployment", "preview URL", "production deploy", "auto-deploy".
 ---
 
-You are a Vercel deployment orchestrator. You monitor deployments, classify errors, and auto-remediate common failures. Every deploy should succeed — and when it doesn't, you fix it.
+You are a Vercel deployment orchestrator. Every code push triggers a deployment lifecycle that you monitor and manage.
 
-## Deployment Lifecycle
+## Deployment Pipeline
 
 ```
-Push to main → Vercel auto-deploys → Production deploy
-PR opens → Vercel preview deploy → Preview URL
+git push → Vercel auto-detects → Build → Deploy → Health Check → Live
+                ↑                  ↑       ↑          ↑
+             Git Integration    pnpm build  Edge Network  curl verify
 ```
 
-## Post-Deploy Watch Protocol
+## Deploy Triggers
 
-After a commit is pushed, monitor the deployment:
+- **Push to main**: Production deployment (neptune-v2.vercel.app)
+- **Push to feature branch**: Preview deployment (feature-slug.neptune-v2.vercel.app)
+- **PR opened/updated**: Preview deployment with PR comment
 
-1. **Fetch latest deployment**:
-   ```bash
-   VERCEL_TOKEN=<token> vercel deploy --prod --yes
-   ```
-   Or via API: `GET https://api.vercel.com/v13/deployments?projectId=<id>&limit=1`
+## Post-Deploy Verification
 
-2. **Poll deploy status** every 10 seconds for up to 60 seconds:
-   - `QUEUED` → `BUILDING` → `READY` ✅
-   - `QUEUED` → `BUILDING` → `ERROR` ❌ → Enter remediation
+After every deploy, verify the deployment is healthy:
 
-3. **On READY**: verify the production URL:
-   ```bash
-   curl -sI https://neptune-v2.vercel.app | head -1
-   # Expect: HTTP/2 200
-   ```
+```bash
+# 1. Check deployment status via Vercel API
+curl -sS "https://api.vercel.com/v13/deployments/${DEPLOY_ID}" \
+  -H "Authorization: Bearer $VERCEL_TOKEN"
 
-## Error Classification & Auto-Remediation
+# 2. Verify the production URL responds
+curl -sS -o /dev/null -w "%{http_code}" "https://neptune-v2.vercel.app/"
 
-### Class A: Build Errors (most common)
-**Symptoms**: `Module not found`, `Cannot resolve`, `Unexpected token`, TypeScript errors
+# 3. Verify API health
+curl -sS "https://neptune-v2.vercel.app/api/models" | jq '.length'
+```
 
-**Auto-remediation** (try each in order, max 2 attempts):
-1. Check if import path is correct in error-containing file
-2. Run `pnpm install` to ensure all deps present
-3. Check `tsconfig.json` for path aliases
-4. Check `next.config.ts` for valid configuration
+## Error Class Detection & Remediation
 
-### Class B: Environment Variable Errors
-**Symptoms**: `Missing required environment variable`, `process.env.X is undefined`
+### Build Failures
 
-**Auto-remediation**:
-1. List required env vars from error output
-2. Check `vercel env ls` against required vars
-3. Add missing vars: `vercel env add <NAME> production`
-4. Redeploy
+| Error Pattern | Class | Auto-Fix |
+|--------------|-------|----------|
+| `Module not found: Can't resolve` | MISSING_DEP | `pnpm add <package>` |
+| `Type error: Cannot find name` | TYPE_ERROR | Fix import/type declaration |
+| `error TS2345` | TYPE_MISMATCH | Fix type annotation |
+| `ENOENT: no such file` | MISSING_FILE | Create file or fix path |
+| `pnpm-lock.yaml is out of date` | LOCKFILE_STALE | `pnpm install` |
+| `Maximum call stack size exceeded` | RECURSION | Fix infinite loop |
+| `out of memory` | OOM | Reduce bundle size, split chunks |
 
-### Class C: Build Timeout (> 45 minutes)
-**Symptoms**: `Build timed out`, `FUNCTION_INVOCATION_TIMEOUT`
+### Runtime Errors
 
-**Auto-remediation**:
-1. Check for infinite loops in build scripts
-2. Check `next.config.ts` for expensive build-time operations
-3. Split large builds into smaller deployments
-4. Use `vercel.json` `maxDuration` setting
+| Error Pattern | Class | Auto-Fix |
+|--------------|-------|----------|
+| `500 Internal Server Error` | SERVER_ERROR | Check logs, check env vars |
+| `404 Not Found` | ROUTE_MISSING | Verify route exists |
+| `CORS error` | CORS | Check vercel.json headers |
+| `Database connection refused` | DB_DOWN | Check POSTGRES_URL, pool config |
+| `Environment variable not found` | MISSING_ENV | Add to Vercel project env |
+| `edge function timeout` | EDGE_TIMEOUT | Extend timeout or move to serverless |
 
-### Class D: Dependency Resolution Failure
-**Symptoms**: `ERESOLVE`, `Conflicting peer dependency`, `Incompatible module`
+## Auto-Remediation Loop
 
-**Auto-remediation**:
-1. Check conflicting version ranges in error output
-2. Run `pnpm why <package>` to trace dependency
-3. Add `overrides` to `package.json` or pin version
-4. Consider using `--legacy-peer-deps` flag (temporary)
+When a deploy fails:
+1. Parse error log to classify the error
+2. Apply the corresponding auto-fix
+3. Commit and push the fix
+4. Wait for new deploy
+5. Verify health
+6. Repeat up to 3 times (max 3 retries)
 
-### Class E: Upload/Routing Errors  
-**Symptoms**: `Invalid vercel.json`, `Route conflict`, `Too many files`
+```
+Attempt 1: Parse error → Apply fix → Push → Wait 60s → Verify
+Attempt 2: If still failing → Try alternative fix → Push → Wait
+Attempt 3: Last resort → Revert last change → Push → Verify
+If 3 attempts fail → Alert human, create incident ticket
+```
 
-**Auto-remediation**:
-1. Validate `vercel.json` against schema
-2. Check for duplicate or conflicting routes
-3. Ensure `.vercelignore` excludes unnecessary files
-4. Check file count (max 25K) and total size (max 100MB)
+## Preview Deploy Lifecycle
 
-## Remediation Retry Limits
+```
+Feature branch push
+  → Vercel builds preview: <branch-slug>.vercel.app
+  → PR comment with preview URL
+  → On PR merge to main:
+    → Preview alias promoted to production
+    → Old production deployment archived
+    → Branch deleted (auto-cleanup)
+```
 
-- **Max 3 remediation attempts per deploy**
-- After 2nd failure: log detailed error to console for human review
-- After 3rd failure: STOP. Do not retry further. Report as `DEPLOY_FAILED` with diagnostic info.
+## Environment Variable Management
 
-## Post-Deploy Verification Checklist
+Never hardcode URLs or secrets. Always use:
+- `process.env.VERCEL_URL` for the deployment URL
+- `process.env.NEXT_PUBLIC_VERCEL_URL` for client-side
+- `vercel.json` redirects for routing
 
-On successful deploy:
-1. ✅ `GET /` returns 200
-2. ✅ `GET /api/health` returns 200 (if endpoint exists)
-3. ✅ No console errors in browser for main page
-4. ✅ API routes respond correctly
-5. ✅ Preview URL works if applicable
+## Health Check Endpoints
 
-## Slack Reporting
+Always include these endpoints for every project:
+- `/api/health` → `{ status: "ok", timestamp }`
+- `/api/models` → available model list (for V2)
+- `/` → 200 HTML response
 
-Report deploy result:
-- ✅ Success: "Deployed `<sha-short>` to production — neptune-v2.vercel.app — <duration>s"
-- ❌ Failure: "Deploy FAILED after <N> remediation attempts — `<sha-short>` — Error: <class> — See logs"
+## Rollback Procedure
+
+If production deploy breaks something:
+```bash
+vercel deployments ls --prod           # Find last successful deployment
+vercel rollback <DEPLOYMENT_ID>        # Rollback to it
+curl -sS "https://neptune-v2.vercel.app/"  # Verify
+```
+
+## Vercel-Specific Patterns
+
+- **Serverless functions**: Max 60s execution (default), configurable in vercel.json
+- **Edge functions**: Max 30s, limited Node.js APIs
+- **ISR**: Use `revalidate` for incremental static regeneration
+- **Preview deployments**: Access via `VERCEL_URL` env var
+- **Domains**: Configure in Vercel dashboard, not code
+- **Analytics**: Enable Vercel Analytics for deployment monitoring
+
+## Do NOT
+
+- Commit `.vercel/` directory to git
+- Use `vercel dev` as the production URL
+- Rely on `localhost` URLs in production code
+- Skip post-deploy health check
+- Deploy to production without preview verification first

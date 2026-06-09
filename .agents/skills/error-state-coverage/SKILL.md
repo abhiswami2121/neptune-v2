@@ -1,201 +1,210 @@
 ---
 name: error-state-coverage
-description: Every page must have error.tsx, not-found.tsx, and loading.tsx. Every async operation must handle errors gracefully. Triggers on "error", "error boundary", "not found", "loading", "error handling", "error state", "error page", "404", "500", "skeleton", "fallback", "empty state".
+description: Every route and component must handle loading, empty, error, not-found, and edge case states. Never show white screens or indefinite spinners. Triggers on "error state", "loading state", "empty state", "not found", "404", "error boundary", "error.tsx", "loading.tsx", "not-found.tsx", "skeleton", "edge case", "error handling".
 ---
 
-You ensure every page and component handles its error states. A page without error handling is incomplete. Users should never see a blank screen, infinite spinner, or cryptic stack trace.
+You ensure every route and component handles all states. No page should ever show a white screen, unstyled error, or indefinite spinner.
 
-## Required Files Per Route
+## The Five States Every Page Must Handle
+
+```
+1. LOADING    — Data is being fetched
+2. EMPTY      — Data loaded but there's nothing to show
+3. ERROR      — Something went wrong
+4. NOT FOUND  — The resource doesn't exist (404)
+5. SUCCESS    — Everything worked (the happy path)
+```
+
+## Next.js Route-Level State Files
 
 Every route segment should have these files:
 
-### 1. `error.tsx` (Client Component)
-Catches runtime errors in the page and its children:
+### `loading.tsx` — Shown during page/segment loading
 
 ```tsx
-"use client";
+// app/users/loading.tsx
+export default function UsersLoading() {
+  return (
+    <div className="space-y-4 animate-pulse">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="h-16 bg-muted rounded-lg" />
+      ))}
+    </div>
+  );
+}
+```
 
-import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { AlertCircle } from "lucide-react";
+**Rules for loading.tsx**:
+- Use skeleton UI (not a bare spinner)
+- Match the layout of the actual content
+- Use `animate-pulse` for skeleton shimmer
+- Export as default function
 
-export default function ErrorPage({
+### `error.tsx` — Shown when an error occurs
+
+```tsx
+"use client"; // error.tsx MUST be a client component
+
+export default function UsersError({
   error,
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useEffect(() => {
-    console.error("Page error:", error);
-  }, [error]);
-
   return (
-    <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
-      <AlertCircle className="h-12 w-12 text-destructive" />
-      <div className="text-center">
-        <h2 className="text-lg font-semibold">Something went wrong</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {error.message || "An unexpected error occurred"}
-        </p>
-      </div>
-      <Button onClick={reset} variant="outline">
-        Try again
-      </Button>
+    <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+      <h2 className="text-xl font-semibold">Something went wrong</h2>
+      <p className="text-muted-foreground text-sm">
+        {error.message || "An unexpected error occurred"}
+      </p>
+      <Button onClick={reset}>Try again</Button>
     </div>
   );
 }
 ```
 
-### 2. `not-found.tsx`
-Handles 404: resource not found:
+**Rules for error.tsx**:
+- MUST be a Client Component (`"use client"`)
+- Accept `error` and `reset` props
+- Provide a retry mechanism (reset button)
+- Log the error in production (Sentry, console.error, etc.)
+- Never expose stack traces to users
+
+### `not-found.tsx` — Shown for 404 pages
 
 ```tsx
+// app/users/not-found.tsx
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { FileQuestion } from "lucide-react";
 
-export default function NotFound() {
+export default function UsersNotFound() {
   return (
-    <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
-      <FileQuestion className="h-12 w-12 text-muted-foreground" />
-      <div className="text-center">
-        <h2 className="text-lg font-semibold">Page not found</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
-        </p>
-      </div>
-      <Button asChild variant="outline">
-        <Link href="/">Go home</Link>
+    <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+      <h2 className="text-2xl font-bold">Not Found</h2>
+      <p className="text-muted-foreground">Could not find the requested resource.</p>
+      <Button asChild>
+        <Link href="/">Return Home</Link>
       </Button>
     </div>
   );
 }
 ```
 
-### 3. `loading.tsx`
-Shows while the page content loads:
+**Rules for not-found.tsx**:
+- Can be Server or Client Component
+- Provide navigation back to safe pages
+- Use `notFound()` function to trigger from Server Components
+- Give a clear message, not just "404"
+
+## Component-Level State Handling
+
+For data-fetching components:
 
 ```tsx
-export default function Loading() {
-  return (
-    <div className="flex min-h-[400px] items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    </div>
-  );
-}
-```
-
-## Global Error Handling
-
-### Root `app/error.tsx`
-Catches errors from layouts and templates. Must be a Client Component.
-
-### Root `app/global-error.tsx`  
-Catches errors in the root layout itself. Replaces the entire HTML. Must include `<html>` and `<body>` tags:
-
-```tsx
-"use client";
-
-export default function GlobalError({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
-  return (
-    <html>
-      <body>
-        <div className="flex min-h-screen flex-col items-center justify-center gap-4">
-          <h1 className="text-2xl font-bold">Something went wrong</h1>
-          <button onClick={reset}>Try again</button>
-        </div>
-      </body>
-    </html>
-  );
-}
-```
-
-## Component-Level Error Handling
-
-Every async operation inside components should handle these states:
-
-### Loading State
-```tsx
-if (isLoading) {
-  return <Skeleton />; // or <LoadingSpinner />
-}
-```
-
-### Empty State  
-```tsx
-if (!data || data.length === 0) {
-  return <EmptyState
-    icon={<Inbox className="h-12 w-12" />}
-    title="No items found"
-    description="Get started by creating your first item."
-    action={<Button>Create Item</Button>}
-  />;
-}
-```
-
-### Error State
-```tsx
-if (error) {
-  return <ErrorDisplay
-    message={error.message}
-    onRetry={() => refetch()}
-  />;
-}
-```
-
-### Success State
-```tsx
-return <DataDisplay data={data} />;
-```
-
-## API Route Error Handling
-
-Every API route should return typed error responses:
-
-```tsx
-// app/api/example/route.ts
-import { NextResponse } from "next/server";
-
-export async function GET() {
+async function UserList() {
   try {
-    const data = await fetchData();
-    return NextResponse.json({ data });
+    const users = await db.user.findMany();
+
+    // EMPTY state
+    if (!users || users.length === 0) {
+      return (
+        <EmptyState
+          icon={UsersIcon}
+          title="No users yet"
+          description="Create your first user to get started."
+          action={<Button>Add User</Button>}
+        />
+      );
+    }
+
+    // SUCCESS state
+    return <UserTable users={users} />;
   } catch (error) {
-    console.error("GET /api/example error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch data", details: process.env.NODE_ENV === "development" ? String(error) : undefined },
-      { status: 500 }
-    );
+    // ERROR state
+    console.error("Failed to fetch users:", error);
+    return <ErrorState message="Could not load users" />;
   }
 }
 ```
 
-Error response shape:
-```ts
-type ApiError = {
-  error: string;        // User-safe message
-  details?: string;     // Dev-only (only in development)
-  code?: string;        // Machine-readable error code
-};
+## Reusable State Components
+
+Create shared state components:
+
+```tsx
+// components/states/empty-state.tsx
+export function EmptyState({ icon: Icon, title, description, action }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+      {Icon && <Icon className="h-12 w-12 text-muted-foreground/50" />}
+      <h3 className="text-lg font-semibold">{title}</h3>
+      {description && (
+        <p className="text-sm text-muted-foreground max-w-sm">{description}</p>
+      )}
+      {action}
+    </div>
+  );
+}
+
+// components/states/error-state.tsx
+export function ErrorState({ title = "Something went wrong", message, onRetry }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 gap-3">
+      <AlertTriangle className="h-12 w-12 text-destructive/50" />
+      <h3 className="text-lg font-semibold">{title}</h3>
+      {message && <p className="text-sm text-muted-foreground">{message}</p>}
+      {onRetry && (
+        <Button variant="outline" onClick={onRetry}>
+          Try again
+        </Button>
+      )}
+    </div>
+  );
+}
 ```
 
-## Checklist Per Page/Route
+## Edge Cases Coverage
 
-- [ ] `error.tsx` exists with try-again button
-- [ ] `not-found.tsx` exists with navigation home
-- [ ] `loading.tsx` exists with spinner/skeleton
-- [ ] Data fetch handles: loading, empty, error, success
-- [ ] API routes return typed error responses
-- [ ] No unhandled promise rejections
-- [ ] Error messages are user-friendly (no stack traces in production)
-- [ ] Retry/recovery actions available where sensible
+| Scenario | State | Solution |
+|----------|-------|----------|
+| API returns 500 | ERROR | error.tsx with retry |
+| API returns empty array | EMPTY | EmptyState component |
+| API takes > 5s | LOADING | loading.tsx with skeleton |
+| User navigates to deleted resource | NOT FOUND | notFound() → not-found.tsx |
+| Network offline | ERROR | Detect with navigator.onLine |
+| Rate limited (429) | ERROR | Show retry-after time |
+| Auth expired (401) | ERROR | Redirect to login |
+| Permission denied (403) | ERROR | Show "access denied" message |
+| Large dataset loading | LOADING | Progressive skeleton |
+| Form validation errors | ERROR | Inline field errors |
+
+## Progressive Enhancement Pattern
+
+```tsx
+// Wrap data-dependent sections in Suspense with fallbacks
+import { Suspense } from "react";
+
+export default function DashboardPage() {
+  return (
+    <div className="space-y-8">
+      <h1>Dashboard</h1>
+      <Suspense fallback={<StatsSkeleton />}>
+        <StatsSection />
+      </Suspense>
+      <Suspense fallback={<TableSkeleton rows={5} />}>
+        <RecentActivitySection />
+      </Suspense>
+    </div>
+  );
+}
+```
+
+## Checklist: New Page/Routes
+
+When creating a new route, confirm all exist:
+- [ ] `page.tsx` — main content
+- [ ] `loading.tsx` — loading skeleton
+- [ ] `error.tsx` — error with retry
+- [ ] `not-found.tsx` — 404 page
+- [ ] Empty state handled within page component
+- [ ] Edge cases: offline, rate limit, auth expired

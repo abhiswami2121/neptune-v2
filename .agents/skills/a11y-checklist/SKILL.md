@@ -1,242 +1,237 @@
 ---
 name: a11y-checklist
-description: Semantic HTML, ARIA attributes, keyboard navigation, color contrast, focus states, and screen reader compatibility. Triggers on "accessibility", "a11y", "ARIA", "keyboard", "screen reader", "focus", "contrast", "WCAG", "semantic HTML", "alt text", "label", "role".
+description: Web accessibility standards — semantic HTML, ARIA attributes, keyboard navigation, color contrast ratios, focus states, screen reader support, and WCAG 2.1 AA compliance. Triggers on "accessibility", "a11y", "ARIA", "keyboard navigation", "screen reader", "focus state", "color contrast", "WCAG", "semantic HTML", "alt text", "role", "tabindex", "accessible", "ADA".
 ---
 
-You are an accessibility enforcer. Every component and page must be usable by everyone, regardless of how they interact with the web. WCAG 2.1 AA is the minimum standard.
+You ensure every UI component is accessible. All interfaces must meet WCAG 2.1 AA standards at minimum.
 
-## Semantic HTML First
+## Core Principles (POUR)
 
-Use the right HTML element for the job before reaching for ARIA:
+1. **Perceivable** — Users can perceive content (text, images, audio)
+2. **Operable** — Users can operate UI (keyboard, touch, voice)
+3. **Understandable** — Content and UI behavior is predictable
+4. **Robust** — Works across browsers, assistive tech, and devices
 
-| Element | When to Use |
-|---------|------------|
-| `<button>` | Clickable actions (not `<div onclick>`) |
-| `<a>` | Navigation links (not `<span onclick>`) |
-| `<nav>` | Navigation sections |
-| `<main>` | Primary page content |
-| `<header>` | Page or section headers |
-| `<footer>` | Page or section footers |
-| `<section>` | Thematic content grouping |
-| `<article>` | Self-contained content |
-| `<aside>` | Complementary content |
-| `<form>` | Form containers (not `<div>`) |
-| `<label>` | Input labels (always pair with inputs) |
-| `<fieldset>` + `<legend>` | Group related form fields |
-| `<table>` | Tabular data (not `<div>` grid) |
-| `<ul>` / `<ol>` | Lists (not `<div>` with bullets) |
-| `<h1>`–`<h6>` | Headings (never skip levels) |
+## 1. Semantic HTML (Always First)
 
-## Heading Hierarchy
-
-Every page must start with exactly one `<h1>`. Headings must not skip levels:
-
-```html
-<h1>Page Title</h1>          <!-- Exactly one -->
-  <h2>Section</h2>            <!-- h1 → h2, NOT h1 → h3 -->
-    <h3>Subsection</h3>       <!-- h2 → h3 -->
-  <h2>Another Section</h2>
-```
-
-## Images & Media
-
-```html
-<!-- Informative image: descriptive alt text -->
-<img src="chart.png" alt="Revenue chart showing 25% growth in Q4" />
-
-<!-- Decorative image: empty alt -->
-<img src="decorative-line.png" alt="" />
-
-<!-- Complex image: alt + long description -->
-<img src="infographic.png" alt="Enrollment process flowchart" aria-describedby="flowchart-desc" />
-<div id="flowchart-desc">Step 1: ...</div>
-
-<!-- SVG icons: aria-hidden + title -->
-<svg aria-hidden="true" focusable="false">
-  <title>Search</title>
-  <!-- ... -->
-</svg>
-```
-
-## Forms
-
-Every input must have an accessible label:
+Use native HTML elements before reaching for ARIA:
 
 ```tsx
-{/* Explicit label */}
-<label htmlFor="email">Email</label>
-<input type="email" id="email" />
+// ✅ CORRECT — semantic, accessible by default
+<header>
+  <nav aria-label="Main">
+    <ul><li><a href="/">Home</a></li></ul>
+  </nav>
+</header>
+<main>
+  <article>
+    <h1>Page Title</h1>
+    <section><h2>Section</h2></section>
+  </article>
+</main>
+<footer>...</footer>
 
-{/* Wrapped label */}
-<label>
-  <span>Email</span>
-  <input type="email" />
-</label>
-
-{/* aria-label for icon-only inputs */}
-<input type="search" aria-label="Search" />
-
-{/* aria-labelledby for complex inputs */}
-<span id="name-label">Full name</span>
-<input aria-labelledby="name-label" />
-
-{/* Error messages must be linked */}
-<input aria-describedby="email-error" aria-invalid="true" />
-<p id="email-error" role="alert">Please enter a valid email</p>
+// ❌ WRONG — div soup, no semantics
+<div className="header"><div className="nav"><div className="link">Home</div></div></div>
 ```
 
-## Keyboard Navigation
+**Semantic element checklist**:
+- `<header>`, `<main>`, `<footer>` for page structure
+- `<nav>` for navigation (with `aria-label` if multiple)
+- `<article>` for self-contained content
+- `<section>` for thematic grouping (with heading)
+- `<button>` for actions (never `<div onClick>`)
+- `<a>` for navigation (never `<div onClick={router.push}>`)
+- `<form>` for forms (with `<label>` for every input)
 
-All interactive elements must be keyboard accessible:
+## 2. Heading Hierarchy
+
+Never skip heading levels:
 
 ```tsx
-// ✅ Button: naturally focusable and actionable
-<button onClick={handleClick}>Submit</button>
+// ✅ CORRECT — logical hierarchy
+<h1>Page Title</h1>
+  <h2>Section One</h2>
+    <h3>Subsection</h3>
+  <h2>Section Two</h2>
 
-// ✅ Custom interactive element: needs role + tabIndex + keyboard handler  
-<div
-  role="button"
-  tabIndex={0}
-  onClick={handleClick}
-  onKeyDown={(e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      handleClick();
-    }
-  }}
->
+// ❌ WRONG — skipped levels
+<h1>Page</h1>
+  <h3>Section</h3>  {/* h2 skipped! */}
+```
+
+**One `<h1>` per page**. Use heading levels to convey structure, not for visual size.
+
+## 3. ARIA — Use Only When Necessary
+
+"No ARIA is better than bad ARIA." Use native HTML first.
+
+```tsx
+// ✅ Correct ARIA usage
+<button aria-expanded={isOpen} aria-controls="menu-panel">Menu</button>
+<div id="menu-panel" role="menu" hidden={!isOpen}>...</div>
+
+// ✅ Live regions for dynamic content
+<div aria-live="polite" aria-atomic="true">{statusMessage}</div>
+
+// ❌ WRONG — redundant ARIA
+<button role="button">Click</button>  {/* button already has role="button" */}
+<a href="/" role="link">Home</a>      {/* a with href already has role="link" */}
+```
+
+**ARIA rules of thumb**:
+- Don't override native semantics
+- All interactive elements need an accessible name
+- `aria-label` for elements without visible text
+- `aria-labelledby` to reference existing text
+- `aria-describedby` for supplemental descriptions
+- `aria-hidden="true"` for decorative/presentational elements
+
+## 4. Keyboard Navigation
+
+Every interactive element must be keyboard accessible:
+
+```tsx
+function CustomSelect({ options, value, onChange }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div
+      role="combobox"
+      aria-expanded={isOpen}
+      aria-haspopup="listbox"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") { setIsOpen(!isOpen); e.preventDefault(); }
+        if (e.key === "Escape") { setIsOpen(false); }
+        if (e.key === "ArrowDown") { /* focus next option */ }
+      }}
+    >
+      <span>{value || "Select..."}</span>
+      {isOpen && (
+        <ul role="listbox">
+          {options.map(opt => (
+            <li key={opt.value} role="option" aria-selected={opt.value === value}
+                onClick={() => { onChange(opt.value); setIsOpen(false); }}>
+              {opt.label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+```
+
+**Keyboard rules**:
+- `Tab` navigates between focusable elements
+- `Enter`/`Space` activates buttons
+- `Escape` closes dialogs/dropdowns
+- `Arrow keys` navigate within composites (tabs, lists, menus)
+- Focus order matches visual order
+- No `tabindex` > 0 (use 0 or -1 only)
+- Focus trap in modals (focus stays inside until dismissed)
+
+## 5. Color Contrast (WCAG AA)
+
+| Element | Minimum Ratio |
+|---------|--------------|
+| Normal text (< 18px) | 4.5:1 |
+| Large text (≥ 18px bold or ≥ 24px) | 3:1 |
+| UI components (icons, borders) | 3:1 |
+| Focus indicators | 3:1 against background |
+
+```tsx
+// Never convey information with color alone
+// ✅ CORRECT — uses icon + text
+<span className="text-destructive">
+  <AlertCircle className="inline h-4 w-4" /> Error: Invalid input
+</span>
+
+// ❌ WRONG — color only (invisible to colorblind users)
+<span className="text-red-500">Invalid input</span>
+```
+
+## 6. Focus States
+
+Every interactive element needs a visible focus indicator:
+
+```tsx
+// Tailwind's default focus ring
+<button className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
   Click me
-</div>
-
-// ❌ Missing keyboard handler
-<div onClick={handleClick}>Click me</div>
+</button>
 ```
 
-Focus order must be logical (follows visual layout). Don't use `tabIndex > 0`.
+**Focus rules**:
+- Use `focus-visible` (not `focus`) — only shows for keyboard, not mouse
+- Never `outline: none` without a replacement
+- Focus ring must have 3:1 contrast against adjacent colors
+- Add "Skip to main content" link as first focusable element
 
-## Focus Management
+## 7. Images and Media
 
 ```tsx
-// Trap focus in modals
-<DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
-  {/* Focus first input automatically */}
-</DialogContent>
+// Informative images: descriptive alt text
+<Image src="/chart.png" alt="Revenue grew 25% YoY from 2023 to 2024" />
 
-// Move focus after navigation
-const router = useRouter();
-router.push("/new-page");
-// Focus the main content after navigation
+// Decorative images: empty alt
+<Image src="/decorative-wave.svg" alt="" />
 
-// Skip to content link (first focusable element)
-<a href="#main-content" className="sr-only focus:not-sr-only">
-  Skip to content
-</a>
+// Complex images: provide long description
+<Image src="/architecture.png" alt="System architecture" aria-describedby="arch-desc" />
+<p id="arch-desc" className="sr-only">Detailed description of the architecture...</p>
 ```
 
-Visible focus indicators on all interactive elements:
+## 8. Forms
+
+```tsx
+// Every input needs a label
+<div>
+  <Label htmlFor="email">Email address</Label>
+  <Input id="email" type="email" aria-describedby="email-hint email-error" />
+  <p id="email-hint" className="text-sm text-muted-foreground">
+    We'll never share your email.
+  </p>
+  {error && (
+    <p id="email-error" className="text-sm text-destructive" role="alert">
+      {error}
+    </p>
+  )}
+</div>
+```
+
+**Form rules**:
+- Every input has `<label>` with `htmlFor` matching `id`
+- Errors use `role="alert"` for screen reader announcement
+- Required fields use `required` attribute + visual indicator
+- Group related fields with `<fieldset>` + `<legend>`
+
+## 9. Motion & Animation
+
+Respect `prefers-reduced-motion`:
+
 ```css
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 ```
 
-## Color & Contrast
-
-- **Text**: minimum 4.5:1 contrast ratio (WCAG AA)
-- **Large text** (18px+ bold or 24px+): minimum 3:1
-- **UI components** and graphical objects: minimum 3:1
-- Never use color alone to convey information — add icons, text, or patterns
-
-```tsx
-// ❌ Color-only error
-<p className="text-red-500">Required</p>
-
-// ✅ Color + icon + text
-<p className="flex items-center gap-1 text-destructive">
-  <AlertCircle className="h-4 w-4" aria-hidden="true" />
-  <span>This field is required</span>
-</p>
-```
-
-## ARIA: Use Sparingly, Use Correctly
-
-**First rule of ARIA**: Don't use ARIA if you can use semantic HTML.
-
-Common correct ARIA uses:
-
-```tsx
-// Live regions for dynamic content
-<div role="status" aria-live="polite">
-  {message}
-</div>
-<div role="alert" aria-live="assertive">
-  {errorMessage}
-</div>
-
-// Tab interface
-<div role="tablist" aria-label="Settings tabs">
-  <button role="tab" aria-selected={active === "general"} aria-controls="panel-general">
-    General
-  </button>
-</div>
-<div role="tabpanel" id="panel-general" aria-labelledby="tab-general">
-  {/* content */}
-</div>
-
-// Toggle state
-<button aria-pressed={isPressed} onClick={toggle}>
-  {isPressed ? "On" : "Off"}
-</button>
-
-// Expandable sections
-<button aria-expanded={isOpen} aria-controls="section-content">
-  {isOpen ? "Collapse" : "Expand"}
-</button>
-<div id="section-content" hidden={!isOpen}>
-  {/* content */}
-</div>
-
-// Loading state
-<div role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
-  {progress}% complete
-</div>
-```
-
-## Screen Reader Only Content
-
-```css
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
-```
-
-```tsx
-<span className="sr-only">You have 3 unread messages</span>
-```
-
-## Page-Level Checklist
+## Quick Checklist (Before Commit)
 
 - [ ] Page has exactly one `<h1>`
-- [ ] Heading hierarchy doesn't skip levels
-- [ ] All images have appropriate `alt` text
-- [ ] All form inputs have labels
+- [ ] All images have `alt` text (or empty `alt=""` for decorative)
+- [ ] All form inputs have associated `<label>`
 - [ ] All interactive elements are keyboard accessible
-- [ ] Focus order follows visual layout
-- [ ] Visible focus indicators on all interactive elements
-- [ ] Color contrast meets WCAG AA (4.5:1 for text)
-- [ ] No information conveyed by color alone
-- [ ] Page has a descriptive `<title>`
-- [ ] Page has `lang` attribute on `<html>`
-- [ ] Skip-to-content link available
-- [ ] `aria-label` on icon-only controls
-- [ ] Error messages linked via `aria-describedby`
-- [ ] Dynamic content uses `aria-live` regions
+- [ ] Focus order is logical and visible
+- [ ] Color is never the only way to convey information
+- [ ] `aria-label` on icon-only buttons/links
+- [ ] `role="alert"` on dynamic error messages
+- [ ] `prefers-reduced-motion` respected
+- [ ] Page has `<main>` landmark
+- [ ] `lang` attribute on `<html>` element
+- [ ] Document has descriptive `<title>`
