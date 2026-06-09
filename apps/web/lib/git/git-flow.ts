@@ -111,10 +111,28 @@ export async function createFeatureBranch(
  * // => "feat(chat): add streaming response support"
  */
 export function commitWithConventionalMessage(
-  type: string,
-  scope: string,
-  subject: string,
+  repoOrType: string,
+  typeOrScope: string,
+  scopeOrSubject: string,
+  subject?: string,
 ): CommitResult & { message: string } {
+  // Overload detection: if 4 args, first is repo (canonical signature)
+  // If 3 args, traditional (type, scope, subject) for backward compat
+  let type: string;
+  let scope: string;
+  let subjectStr: string;
+
+  if (subject !== undefined) {
+    // 4-arg form: commitWithConventionalMessage(repo, type, scope, subject)
+    type = typeOrScope;
+    scope = scopeOrSubject;
+    subjectStr = subject;
+  } else {
+    // 3-arg form: commitWithConventionalMessage(type, scope, subject)
+    type = repoOrType;
+    scope = typeOrScope;
+    subjectStr = scopeOrSubject;
+  }
   if (!isValidType(type)) {
     throw new Error(
       `Invalid commit type: "${type}". Must be one of: ${VALID_TYPES.join(", ")}`,
@@ -353,4 +371,122 @@ export function conflictAutoResolve(
         ? `${conflicts.length} file(s) require manual resolution: ${conflicts.join(", ")}`
         : undefined,
   };
+}
+
+/**
+ * Convenience overload: check if a branch has conflicts with main
+ * and attempt auto-resolution via the GitHub compare API.
+ *
+ * This is the sandbox-friendly entry point: V2 calls this with just
+ * repo + branch and gets back a structured resolution result.
+ *
+ * @example
+ *   const result = await conflictAutoResolve("abhiswami2121/neptune-v2", "feature/my-task");
+ *   // => { resolved: true, conflicts: [], message: "No conflicts — safe to rebase" }
+ */
+export async function checkBranchConflicts(
+  repoUrl: string,
+  branch: string,
+  baseBranch = "main",
+): Promise<{
+  resolved: boolean;
+  conflicts: string[];
+  message: string;
+}> {
+  if (!branch || !SAFE_BRANCH_PATTERN.test(branch.replace(/^[a-z]+\//, ""))) {
+    return {
+      resolved: false,
+      conflicts: [],
+      message: `Invalid branch name: ${branch}`,
+    };
+  }
+
+  const parsed = parseGitHubUrl(repoUrl);
+  if (!parsed) {
+    return {
+      resolved: false,
+      conflicts: [],
+      message: `Invalid repo URL: ${repoUrl}`,
+    };
+  }
+
+  try {
+    const { owner, repo } = parsed;
+    const compareUrl = `https://api.github.com/repos/${owner}/${repo}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(branch)}`;
+
+    const response = await fetch(compareUrl, {
+      headers: {
+        Accept: "application/vnd.github.v3+json",
+        ...(process.env.GITHUB_TOKEN
+          ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
+          : {}),
+      },
+    });
+
+    if (!response.ok) {
+      return {
+        resolved: false,
+        conflicts: [],
+        message: `GitHub API returned ${response.status}`,
+      };
+    }
+
+    const compare = await response.json();
+
+    switch (compare.status) {
+      case "identical":
+        return {
+          resolved: true,
+          conflicts: [],
+          message: "Branch is already in sync with main",
+        };
+      case "ahead":
+        return {
+          resolved: true,
+          conflicts: [],
+          message: "Branch is ahead of main — no conflicts",
+        };
+      case "behind":
+        return {
+          resolved: true,
+          conflicts: [],
+          message:
+            "Branch is behind main but has no conflicts — fast-forward to rebase",
+        };
+      case "diverged": {
+        if (compare.mergeable === true) {
+          return {
+            resolved: true,
+            conflicts: [],
+            message:
+              "Branches have diverged but GitHub reports mergeable — safe to rebase",
+          };
+        }
+        const conflictFiles: string[] = (compare.files || [])
+          .filter((f: { status?: string }) => f.status === "modified")
+          .map((f: { filename: string }) => f.filename);
+
+        return {
+          resolved: false,
+          conflicts: conflictFiles,
+          message: `${conflictFiles.length} file(s) have conflicts requiring manual resolution`,
+        };
+      }
+      default:
+        return {
+          resolved: false,
+          conflicts: [],
+          message: `Unknown compare status: ${compare.status}`,
+        };
+    }
+  } catch (err) {
+    return {
+      resolved: false,
+      conflicts: [],
+      message:
+        err instanceof Error
+          ? `Error checking conflicts: ${err.message}`
+          : "Unknown error checking conflicts",
+    };
+  }
 }
