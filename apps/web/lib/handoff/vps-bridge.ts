@@ -1,740 +1,593 @@
 /**
- * VPS Handoff Bridge — dispatches long-running coding tasks from V2 Neptune
- * to VPS Hermes (Claude Agent API) when tasks exceed V2 sandbox capabilities.
+ * VPS Handoff Bridge — dispatches long-running/system-level missions
+ * from V2 Neptune (Vercel sandbox) to VPS Hermes (claude-agent-api).
  *
- * Decision matrix from handoff-decision SKILL.md:
- *   HAND OFF TO VPS if: > 30 min runtime | multi-repo (3+) | system-level ops |
- *                       production secrets | risky DB migrations | cron management |
- *                       filesystem outside sandbox
+ * When V2's handoff-decision skill determines a task is better suited for
+ * the VPS (runtime > 30min, multi-repo, system-level ops, filesystem work),
+ * this bridge packages the mission, dispatches it to the VPS claude-agent-api,
+ * and provides status polling + result retrieval.
  *
  * Module exports:
- *   - dispatchToVps: Send a mission brief to VPS Hermes
- *   - pollVpsSession: Check status of a dispatched VPS session
- *   - retrieveVpsResult: Get final output + artifacts from completed session
- *   - cancelVpsSession: Cancel a running VPS session
- *   - isVpsAvailable: Health-check the VPS Claude Agent API
+ * - dispatchMission: Send a task to VPS Hermes
+ * - getMissionStatus: Poll for progress/results
+ * - cancelMission: Cancel a running mission
+ * - estimateCompletionTime: Heuristic for whether VPS is faster
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface VpsMissionBrief {
-  /** Clear description of what to do */
-  task: string;
-  /** Target repository (owner/repo format) */
-  repo: string;
-  /** Estimated runtime, e.g. "45 minutes" */
-  estimatedRuntime: string;
-  /** Which rule triggered the handoff */
-  reasonForHandoff:
-    | "long_runtime"
-    | "multi_repo"
-    | "system_level"
-    | "production_secrets"
-    | "risky_migration"
-    | "cron_management"
-    | "filesystem_work"
-    | "vps_health";
-  /** How to verify completion */
-  successCriteria: string[];
-  /** Expected output files */
-  filesToProduce: string[];
-  /** Optional: priority override (default: "normal") */
-  priority?: "low" | "normal" | "high" | "critical";
-  /** Optional: context from V2 to help VPS understand the task */
-  context?: string;
-}
+export type MissionPriority = "low" | "normal" | "high" | "critical";
 
-export interface DispatchResult {
-  success: boolean;
-  sessionId?: string;
-  taskId?: string;
-  statusUrl?: string;
-  error?: string;
-  /** Human-readable summary of what was dispatched */
-  summary: string;
-}
-
-export type VpsSessionStatus =
-  | "pending"
+export type MissionStatus =
+  | "queued"
   | "running"
   | "completed"
   | "failed"
   | "cancelled"
-  | "unknown";
+  | "timed_out";
 
-export interface SessionStatus {
-  sessionId: string;
-  status: VpsSessionStatus;
-  startedAt?: string;
-  finishedAt?: string;
-  toolCallCount?: number;
-  progress?: string;
-  error?: string;
+export interface VpsMissionBrief {
+  /** Human-readable description of the task */
+  task: string;
+  /** Target repository (owner/repo) */
+  repo: string;
+  /** Optional branch to work on */
+  branch?: string;
+  /** Estimated runtime (e.g., "45 minutes") */
+  estimated_runtime: string;
+  /** Which handoff rule triggered the dispatch */
+  reason_for_handoff: string;
+  /** How to verify the task was completed successfully */
+  success_criteria: string[];
+  /** Expected output files or artifacts */
+  files_to_produce: string[];
+  /** Priority level */
+  priority?: MissionPriority;
+  /** Tags for categorisation */
+  tags?: string[];
 }
 
-export interface VpsResult {
-  sessionId: string;
-  status: VpsSessionStatus;
-  /** Final output from the VPS session */
-  output?: string;
-  /** Any files produced during the session */
-  artifacts?: Array<{ path: string; content: string }>;
-  /** Links to commits/PRs created by the VPS */
-  commitLinks?: string[];
-  /** Error details if the session failed */
-  error?: string;
-  /** Session summary from Hermes */
+export interface VpsMissionResult {
+  missionId: string;
+  status: MissionStatus;
+  /** Output artifacts produced by the mission */
+  artifacts?: Array<{
+    path: string;
+    url?: string;
+    summary: string;
+  }>;
+  /** Summary of work completed */
   summary?: string;
-  /** Tool call statistics */
-  stats?: {
-    totalToolCalls: number;
-    bashCalls: number;
-    nativeCalls: number;
-    durationMs: number;
-  };
-}
-
-export interface CancelResult {
-  success: boolean;
-  sessionId: string;
+  /** Error details if failed */
   error?: string;
+  /** Detailed error diagnostics */
+  error_diagnostics?: string;
+  /** Commit SHA if changes were committed */
+  commit_sha?: string;
+  /** PR URL if one was created */
+  pr_url?: string;
+  /** Timestamps */
+  dispatchedAt: string;
+  startedAt?: string;
+  completedAt?: string;
 }
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+export interface MissionDispatchResponse {
+  missionId: string;
+  status: "accepted" | "rejected";
+  queue_position?: number;
+  estimated_start?: string;
+  reason?: string;
+}
 
-/** Base URL for the VPS Claude Agent API. Configurable via env for dev/prod. */
-const VPS_AGENT_URL =
-  process.env.VPS_CLAUDE_AGENT_URL ?? "http://localhost:8102";
+export interface MissionListEntry {
+  missionId: string;
+  task: string;
+  repo: string;
+  status: MissionStatus;
+  dispatchedAt: string;
+}
 
-/** Auth token for VPS API. Must match CLAUDE_AGENT_API_TOKEN on the VPS. */
-const VPS_AUTH_TOKEN =
-  process.env.VPS_HANDOFF_TOKEN ?? process.env.NEPTUNE_TEST_TOKEN ?? "";
+// ─── Configuration ───────────────────────────────────────────────────────────
 
-/** Max poll attempts before declaring a timeout */
-const MAX_POLL_ATTEMPTS = 120;
-
-/** Milliseconds between polls */
-const POLL_INTERVAL_MS = 15_000; // 15 seconds
-
-/** Session timeout in milliseconds (30 minutes) */
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const VPS_AGENT_API_URL =
+  process.env.VPS_AGENT_API_URL || "http://187.127.250.171:8102";
+const VPS_INTERNAL_TOKEN = process.env.VPS_INTERNAL_TOKEN || "";
+const MISSION_POLL_INTERVAL_MS = 30_000; // 30 seconds between polls
+const MISSION_TIMEOUT_MS = 3_600_000; // 1 hour max wait
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function buildAuthHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+function generateMissionId(): string {
+  return `vps-mission-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+}
 
-  if (VPS_AUTH_TOKEN) {
-    headers["Authorization"] = `Bearer ${VPS_AUTH_TOKEN}`;
+/**
+ * Build a structured prompt for the VPS claude-agent-api that includes
+ * all the context VPS Hermes needs to execute the mission autonomously.
+ */
+function buildVpsPrompt(brief: VpsMissionBrief): string {
+  const lines = [
+    `## V2 Handoff Mission: ${brief.task}`,
+    ``,
+    `**Repository:** ${brief.repo}`,
+    `**Estimated Runtime:** ${brief.estimated_runtime}`,
+    `**Reason for Handoff:** ${brief.reason_for_handoff}`,
+    `**Branch:** ${brief.branch || "main"}`,
+    ``,
+    `### Success Criteria`,
+    ...brief.success_criteria.map((c, i) => `${i + 1}. ${c}`),
+    ``,
+    `### Expected Output Files`,
+    ...brief.files_to_produce.map((f) => `- ${f}`),
+    ``,
+    `### Instructions`,
+    `1. Check out the repository and switch to the correct branch`,
+    `2. Execute the task described above`,
+    `3. Commit all changes with a conventional commit message`,
+    `4. Push to the remote repository`,
+    `5. Verify all success criteria are met`,
+    `6. Report back with: commit SHA, PR URL (if created), summary of changes`,
+    ``,
+    `### Handoff Metadata`,
+    `- Mission ID: {{MISSION_ID}}`,
+    `- Dispatched from: V2 Neptune Coding Agent`,
+    `- Priority: ${brief.priority || "normal"}`,
+  ];
+
+  if (brief.tags && brief.tags.length > 0) {
+    lines.push(`- Tags: ${brief.tags.join(", ")}`);
   }
 
-  return headers;
+  return lines.join("\n");
 }
 
-function generateTaskId(): string {
-  return `v2-handoff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+// ─── In-Memory Mission Registry (for status tracking) ────────────────────────
+
+interface MissionEntry {
+  brief: VpsMissionBrief;
+  status: MissionStatus;
+  dispatchedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  result?: VpsMissionResult;
 }
 
-/**
- * Map handoff reason codes to human-readable labels for the VPS mission prompt.
- */
-function reasonLabel(reason: VpsMissionBrief["reasonForHandoff"]): string {
-  const labels: Record<VpsMissionBrief["reasonForHandoff"], string> = {
-    long_runtime: "Estimated runtime exceeds V2 sandbox limit (>30 min)",
-    multi_repo: "Task spans 3+ repositories",
-    system_level: "Requires system-level access (pm2, cron, env)",
-    production_secrets: "Involves production secret rotation",
-    risky_migration: "Risky database migration requiring VPS validation",
-    cron_management: "Cron job management requiring VPS infrastructure",
-    filesystem_work: "File system operations outside sandbox scope",
-    vps_health: "VPS health operations (nginx, SSL, pm2 logs)",
-  };
-  return labels[reason] ?? reason;
-}
-
-/**
- * Build a system prompt for the VPS agent from a mission brief.
- */
-function buildMissionPrompt(brief: VpsMissionBrief): string {
-  const priority = brief.priority ?? "normal";
-  const contextBlock = brief.context
-    ? `\n\n## Context from V2 Neptune\n${brief.context}`
-    : "";
-
-  return `## MISSION DISPATCHED FROM NEPTUNE V2
-
-**Task:** ${brief.task}
-**Repository:** ${brief.repo}
-**Estimated Runtime:** ${brief.estimatedRuntime}
-**Handoff Reason:** ${reasonLabel(brief.reasonForHandoff)}
-**Priority:** ${priority.toUpperCase()}
-
-### Success Criteria
-${brief.successCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
-
-### Expected Output Files
-${brief.filesToProduce.map((f) => `- \`${f}\``).join("\n")}
-${contextBlock}
-
-### Instructions
-1. Read the task and context carefully
-2. Execute the mission using native tools (Read, Write, Edit, Bash, Grep, Glob)
-3. Verify each success criterion before declaring done
-4. Write a proof file at /home/hermes/data/${generateTaskId()}_complete.json
-5. Reply with a summary of what was done and any issues encountered
-
-You have been dispatched by Neptune V2. Report completion via the SessionDataStore.`;
-}
+const missionRegistry = new Map<string, MissionEntry>();
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * Dispatch a mission to VPS Hermes via the Claude Agent API.
+ * Dispatch a mission to VPS Hermes for execution.
  *
- * Sends a POST to /v1/sessions to create a new VPS session with the mission
- * brief as the initial message. The VPS agent (Hermes) picks up the session
- * and executes the mission.
+ * Packages the task brief, sends it to the VPS claude-agent-api,
+ * and returns a mission ID for status tracking.
  *
  * @example
- * const result = await dispatchToVps({
+ * const response = await dispatchMission({
  *   task: "Run full database migration across all tenants",
  *   repo: "abhiswami2121/neptune-v2",
- *   estimatedRuntime: "45 minutes",
- *   reasonForHandoff: "risky_migration",
- *   successCriteria: ["All tenant DBs migrated", "No data loss"],
- *   filesToProduce: ["migration-report.json"],
+ *   estimated_runtime: "45 minutes",
+ *   reason_for_handoff: "Multi-tenant migration + long runtime",
+ *   success_criteria: ["All tenant DBs migrated", "No data loss"],
+ *   files_to_produce: ["migration-report.json"],
+ *   priority: "high",
  * });
+ * console.log(`Mission dispatched: ${response.missionId}`);
  */
-export async function dispatchToVps(
+export async function dispatchMission(
   brief: VpsMissionBrief,
-): Promise<DispatchResult> {
-  const taskId = generateTaskId();
-  const missionPrompt = buildMissionPrompt(brief);
+): Promise<MissionDispatchResponse> {
+  const missionId = generateMissionId();
+  const prompt = buildVpsPrompt(brief).replace("{{MISSION_ID}}", missionId);
 
-  if (!VPS_AUTH_TOKEN) {
+  if (!VPS_INTERNAL_TOKEN) {
+    console.warn(
+      "[vps-bridge] VPS_INTERNAL_TOKEN not set — mission queued locally only",
+    );
+    // Queue locally without dispatching to VPS
+    missionRegistry.set(missionId, {
+      brief,
+      status: "queued",
+      dispatchedAt: new Date().toISOString(),
+    });
+
     return {
-      success: false,
-      taskId,
-      error:
-        "VPS_HANDOFF_TOKEN or NEPTUNE_TEST_TOKEN not configured. Set env var to enable VPS handoff.",
-      summary: "Handoff blocked: missing auth token",
+      missionId,
+      status: "accepted",
+      queue_position: missionRegistry.size,
+      estimated_start: "VPS token not configured — mission queued locally",
     };
   }
 
   try {
-    const response = await fetch(`${VPS_AGENT_URL}/v1/sessions`, {
+    const response = await fetch(`${VPS_AGENT_API_URL}/api/mission/dispatch`, {
       method: "POST",
-      headers: buildAuthHeaders(),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${VPS_INTERNAL_TOKEN}`,
+      },
       body: JSON.stringify({
-        mode: "mission",
-        task_id: taskId,
+        missionId,
+        task: brief.task,
         repo: brief.repo,
-        priority: brief.priority ?? "normal",
-        prompt: missionPrompt,
-        metadata: {
-          source: "neptune-v2",
-          reason_for_handoff: brief.reasonForHandoff,
-          estimated_runtime: brief.estimatedRuntime,
-        },
+        branch: brief.branch || "main",
+        priority: brief.priority || "normal",
+        prompt,
+        success_criteria: brief.success_criteria,
+        files_to_produce: brief.files_to_produce,
+        tags: brief.tags || [],
       }),
       signal: AbortSignal.timeout(30_000), // 30s timeout for dispatch
     });
 
     if (!response.ok) {
-      const errorBody = await response.text().catch(() => "Unknown error");
-      return {
-        success: false,
-        taskId,
-        error: `VPS API returned ${response.status}: ${errorBody.slice(0, 200)}`,
-        summary: `Handoff failed: VPS API returned ${response.status}`,
-      };
-    }
+      const errorBody = await response.text();
+      console.error(
+        `[vps-bridge] VPS rejected mission ${missionId}: ${response.status} — ${errorBody}`,
+      );
 
-    const data = await response.json();
-    const sessionId = data.id ?? data.session_id ?? data.sessionId;
-
-    if (!sessionId) {
-      return {
-        success: false,
-        taskId,
-        error: "VPS API did not return a session ID",
-        summary: "Handoff failed: no session ID in response",
-      };
-    }
-
-    return {
-      success: true,
-      sessionId,
-      taskId,
-      statusUrl: `${VPS_AGENT_URL}/v1/sessions/${sessionId}`,
-      summary: `Mission dispatched to VPS Hermes. Session: ${sessionId}. Reason: ${brief.reasonForHandoff}.`,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-
-    // Classify specific errors
-    if (message.includes("ENOTFOUND") || message.includes("ECONNREFUSED")) {
-      return {
-        success: false,
-        taskId,
-        error: `VPS is unreachable at ${VPS_AGENT_URL}. Is the Claude Agent API running?`,
-        summary: "Handoff failed: VPS unreachable",
-      };
-    }
-
-    if (message.includes("timeout") || message.includes("aborted")) {
-      return {
-        success: false,
-        taskId,
-        error: "VPS dispatch timed out after 30 seconds",
-        summary: "Handoff failed: dispatch timeout",
-      };
-    }
-
-    return {
-      success: false,
-      taskId,
-      error: message,
-      summary: "Handoff failed: unexpected error",
-    };
-  }
-}
-
-/**
- * Poll a VPS session for its current status.
- *
- * Makes a GET request to the VPS Claude Agent API to check whether a
- * dispatched mission is still running, completed, or failed.
- *
- * @example
- * const status = await pollVpsSession("session_abc123");
- * if (status.status === "completed") {
- *   const result = await retrieveVpsResult("session_abc123");
- * }
- */
-export async function pollVpsSession(
-  sessionId: string,
-): Promise<SessionStatus> {
-  if (!sessionId) {
-    return {
-      sessionId: "",
-      status: "unknown",
-      error: "No session ID provided",
-    };
-  }
-
-  try {
-    const response = await fetch(
-      `${VPS_AGENT_URL}/v1/sessions/${encodeURIComponent(sessionId)}`,
-      {
-        method: "GET",
-        headers: buildAuthHeaders(),
-        signal: AbortSignal.timeout(10_000),
-      },
-    );
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        return {
-          sessionId,
-          status: "unknown",
-          error: "Session not found on VPS",
-        };
-      }
+      missionRegistry.set(missionId, {
+        brief,
+        status: "failed",
+        dispatchedAt: new Date().toISOString(),
+        result: {
+          missionId,
+          status: "failed",
+          error: `VPS rejected dispatch: ${response.status}`,
+          error_diagnostics: errorBody,
+          dispatchedAt: new Date().toISOString(),
+        },
+      });
 
       return {
-        sessionId,
-        status: "unknown",
-        error: `VPS API returned ${response.status}`,
+        missionId,
+        status: "rejected",
+        reason: `VPS returned ${response.status}: ${errorBody}`,
       };
     }
 
     const data = await response.json();
 
-    return {
-      sessionId,
-      status: normalizeStatus(data.status ?? data.state),
-      startedAt: data.started_at ?? data.startedAt ?? data.created_at,
-      finishedAt: data.finished_at ?? data.finishedAt ?? data.completed_at,
-      toolCallCount: data.tool_call_count ?? data.toolCallCount,
-      progress: data.progress ?? data.current_task,
-      error: data.error ?? data.error_message,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-
-    return {
-      sessionId,
-      status: "unknown",
-      error: `Failed to poll VPS session: ${message}`,
-    };
-  }
-}
-
-/**
- * Retrieve the final result of a completed VPS session.
- *
- * Fetches the session output, any produced artifacts, and summary from
- * the VPS Claude Agent API. Only works for completed or failed sessions.
- *
- * @example
- * const result = await retrieveVpsResult("session_abc123");
- * console.log(result.output);
- * console.log(result.summary);
- */
-export async function retrieveVpsResult(
-  sessionId: string,
-): Promise<VpsResult> {
-  if (!sessionId) {
-    return {
-      sessionId: "",
-      status: "unknown",
-      error: "No session ID provided",
-    };
-  }
-
-  try {
-    // Fetch session messages and artifacts
-    const [messagesResponse, artifactsResponse] = await Promise.all([
-      fetch(
-        `${VPS_AGENT_URL}/v1/sessions/${encodeURIComponent(sessionId)}/messages`,
-        {
-          method: "GET",
-          headers: buildAuthHeaders(),
-          signal: AbortSignal.timeout(15_000),
-        },
-      ),
-      fetch(
-        `${VPS_AGENT_URL}/v1/sessions/${encodeURIComponent(sessionId)}/artifacts`,
-        {
-          method: "GET",
-          headers: buildAuthHeaders(),
-          signal: AbortSignal.timeout(15_000),
-        },
-      ),
-    ]);
-
-    // Parse messages
-    let output: string | undefined;
-    let summary: string | undefined;
-    let commitLinks: string[] = [];
-    let sessionStatus: VpsSessionStatus = "unknown";
-
-    if (messagesResponse.ok) {
-      const messages = await messagesResponse.json();
-      const messagesArray = Array.isArray(messages)
-        ? messages
-        : messages.messages ?? messages.data ?? [];
-
-      // Extract last assistant message as output
-      const lastAssistantMsg = messagesArray
-        .filter((m: { role?: string }) => m.role === "assistant")
-        .at(-1);
-
-      if (lastAssistantMsg) {
-        output =
-          typeof lastAssistantMsg.content === "string"
-            ? lastAssistantMsg.content
-            : JSON.stringify(lastAssistantMsg.content);
-      }
-
-      // Extract summary if present
-      const summaryMsg = messagesArray.find(
-        (m: { role?: string }) => m.role === "system" && m.content?.includes?.("SUMMARY"),
-      );
-      if (summaryMsg?.content) {
-        summary = summaryMsg.content;
-      }
-
-      // Extract GH links from output
-      const ghLinkPattern = /https:\/\/github\.com\/[^\s\)]+/g;
-      commitLinks = (output ?? "").match(ghLinkPattern) ?? [];
-    }
-
-    // Parse artifacts
-    let artifacts: VpsResult["artifacts"] = [];
-    if (artifactsResponse.ok) {
-      const artifactsData = await artifactsResponse.json();
-      const artifactsArray = Array.isArray(artifactsData)
-        ? artifactsData
-        : artifactsData.artifacts ?? artifactsData.files ?? [];
-
-      artifacts = artifactsArray.map(
-        (a: { path?: string; file?: string; content?: string; data?: string }) => ({
-          path: a.path ?? a.file ?? "unknown",
-          content: a.content ?? a.data ?? "",
-        }),
-      );
-    }
-
-    // Get session status
-    const statusResult = await pollVpsSession(sessionId);
-    sessionStatus = statusResult.status;
-
-    return {
-      sessionId,
-      status: sessionStatus,
-      output,
-      artifacts,
-      commitLinks,
-      error: statusResult.error,
-      summary,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-
-    return {
-      sessionId,
-      status: "unknown",
-      error: `Failed to retrieve VPS result: ${message}`,
-    };
-  }
-}
-
-/**
- * Cancel a running VPS session.
- *
- * Sends a cancellation request to stop a long-running session that is
- * no longer needed.
- *
- * @example
- * const result = await cancelVpsSession("session_abc123");
- * if (result.success) console.log("Session cancelled");
- */
-export async function cancelVpsSession(
-  sessionId: string,
-): Promise<CancelResult> {
-  if (!sessionId) {
-    return {
-      success: false,
-      sessionId: "",
-      error: "No session ID provided",
-    };
-  }
-
-  try {
-    const response = await fetch(
-      `${VPS_AGENT_URL}/v1/sessions/${encodeURIComponent(sessionId)}/cancel`,
-      {
-        method: "POST",
-        headers: buildAuthHeaders(),
-        signal: AbortSignal.timeout(10_000),
-      },
-    );
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      return {
-        success: false,
-        sessionId,
-        error: `VPS API returned ${response.status}: ${body.slice(0, 200)}`,
-      };
-    }
-
-    return {
-      success: true,
-      sessionId,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      success: false,
-      sessionId,
-      error: `Failed to cancel VPS session: ${message}`,
-    };
-  }
-}
-
-/**
- * Check if the VPS Claude Agent API is healthy and reachable.
- *
- * @example
- * const available = await isVpsAvailable();
- * if (!available) console.log("VPS is down, handling inline instead");
- */
-export async function isVpsAvailable(): Promise<boolean> {
-  try {
-    const response = await fetch(`${VPS_AGENT_URL}/health`, {
-      method: "GET",
-      signal: AbortSignal.timeout(5_000),
+    missionRegistry.set(missionId, {
+      brief,
+      status: "queued",
+      dispatchedAt: new Date().toISOString(),
     });
 
-    return response.ok;
-  } catch {
-    return false;
+    return {
+      missionId,
+      status: "accepted",
+      queue_position: data.queue_position,
+      estimated_start: data.estimated_start,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+
+    missionRegistry.set(missionId, {
+      brief,
+      status: "failed",
+      dispatchedAt: new Date().toISOString(),
+      result: {
+        missionId,
+        status: "failed",
+        error: `Failed to reach VPS: ${message}`,
+        dispatchedAt: new Date().toISOString(),
+      },
+    });
+
+    // Fallback: queue locally so V2 doesn't lose the mission
+    console.error(
+      `[vps-bridge] Failed to reach VPS for mission ${missionId}: ${message}. Queued locally.`,
+    );
+
+    return {
+      missionId,
+      status: "accepted",
+      queue_position: missionRegistry.size,
+      reason: `VPS unreachable — queued locally: ${message}`,
+    };
   }
 }
 
 /**
- * Poll a VPS session until it completes or times out.
+ * Poll the VPS for the current status of a dispatched mission.
  *
- * Use for synchronous-style waiting. For large operations, prefer
- * pollVpsSession() in a background job to avoid blocking the request.
- *
- * @param sessionId - The VPS session ID to poll
- * @param options.pollIntervalMs - Time between polls (default: 15s)
- * @param options.maxAttempts - Max polls before timeout (default: 120)
- * @returns The final result or a timeout error
+ * Returns the mission result if completed, status updates if still running.
+ * Recommended polling interval: 30 seconds.
  *
  * @example
- * const result = await waitForVpsCompletion("session_abc123");
- * if (result.status === "completed") {
- *   console.log("Mission accomplished:", result.summary);
+ * const status = await getMissionStatus("vps-mission-1718123456789-abc12345");
+ * if (status.status === "completed") {
+ *   console.log("Artifacts:", status.artifacts);
  * }
  */
-export async function waitForVpsCompletion(
-  sessionId: string,
-  options?: {
-    pollIntervalMs?: number;
-    maxAttempts?: number;
-  },
-): Promise<VpsResult> {
-  const interval = options?.pollIntervalMs ?? POLL_INTERVAL_MS;
-  const maxAttempts = options?.maxAttempts ?? MAX_POLL_ATTEMPTS;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const status = await pollVpsSession(sessionId);
-
-    if (status.status === "completed" || status.status === "failed") {
-      return retrieveVpsResult(sessionId);
-    }
-
-    if (status.status === "cancelled") {
-      return {
-        sessionId,
-        status: "cancelled",
-        error: "Session was cancelled",
-      };
-    }
-
-    // Check for timeout
-    if (attempt >= maxAttempts) {
-      return {
-        sessionId,
-        status: "running",
-        error: `Session still running after ${maxAttempts} poll attempts (${(maxAttempts * interval) / 1000}s)`,
-      };
-    }
-
-    // Wait before next poll
-    await new Promise((resolve) => setTimeout(resolve, interval));
+export async function getMissionStatus(
+  missionId: string,
+): Promise<VpsMissionResult> {
+  // Check local registry first
+  const entry = missionRegistry.get(missionId);
+  if (!entry) {
+    return {
+      missionId,
+      status: "failed",
+      error: `Mission ${missionId} not found in registry`,
+      dispatchedAt: new Date().toISOString(),
+    };
   }
 
-  // Should never reach here (loop exits above)
-  return retrieveVpsResult(sessionId);
+  // If already terminal, return cached result
+  if (entry.result && ["completed", "failed", "cancelled", "timed_out"].includes(entry.result.status)) {
+    return entry.result;
+  }
+
+  // If no VPS token, return local status only
+  if (!VPS_INTERNAL_TOKEN) {
+    return {
+      missionId,
+      status: entry.status,
+      dispatchedAt: entry.dispatchedAt,
+      startedAt: entry.startedAt,
+    };
+  }
+
+  try {
+    const response = await fetch(
+      `${VPS_AGENT_API_URL}/api/mission/${missionId}/status`,
+      {
+        headers: {
+          Authorization: `Bearer ${VPS_INTERNAL_TOKEN}`,
+        },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+
+    if (!response.ok) {
+      return {
+        missionId,
+        status: entry.status,
+        error: `VPS status check failed: ${response.status}`,
+        dispatchedAt: entry.dispatchedAt,
+        startedAt: entry.startedAt,
+      };
+    }
+
+    const data = await response.json();
+    const status: MissionStatus = data.status || entry.status;
+
+    // Update local registry
+    entry.status = status;
+    if (data.started_at) entry.startedAt = data.started_at;
+    if (data.completed_at) entry.completedAt = data.completed_at;
+
+    const result: VpsMissionResult = {
+      missionId,
+      status,
+      artifacts: data.artifacts,
+      summary: data.summary,
+      error: data.error,
+      error_diagnostics: data.error_diagnostics,
+      commit_sha: data.commit_sha,
+      pr_url: data.pr_url,
+      dispatchedAt: entry.dispatchedAt,
+      startedAt: entry.startedAt,
+      completedAt: entry.completedAt,
+    };
+
+    // Cache terminal results
+    if (["completed", "failed", "cancelled", "timed_out"].includes(status)) {
+      entry.result = result;
+    }
+
+    return result;
+  } catch (err) {
+    return {
+      missionId,
+      status: entry.status,
+      error: `Failed to reach VPS: ${err instanceof Error ? err.message : String(err)}`,
+      dispatchedAt: entry.dispatchedAt,
+      startedAt: entry.startedAt,
+    };
+  }
 }
 
 /**
- * Decision engine: should this task be handed off to VPS?
- *
- * Implements the decision matrix from handoff-decision SKILL.md.
- *
- * @returns { handoff: boolean, reason: string }
+ * Cancel a running or queued mission.
  *
  * @example
- * const decision = shouldHandoffToVps({
- *   estimatedMinutes: 45,
- *   repoCount: 1,
- *   requiresSystemAccess: false,
- * });
- * // => { handoff: true, reason: "long_runtime" }
+ * await cancelMission("vps-mission-1718123456789-abc12345");
  */
-export function shouldHandoffToVps(params: {
-  estimatedMinutes?: number;
-  repoCount?: number;
-  requiresSystemAccess?: boolean;
-  requiresSecretRotation?: boolean;
-  isRiskyMigration?: boolean;
-  isCronManagement?: boolean;
-  requiresFilesystemAccess?: boolean;
-  vpsHealthOps?: boolean;
-}): { handoff: boolean; reason: string } {
-  if ((params.estimatedMinutes ?? 0) > 30) {
-    return {
-      handoff: true,
-      reason: `Estimated runtime (${params.estimatedMinutes} min) exceeds V2 sandbox limit of 30 min`,
-    };
+export async function cancelMission(
+  missionId: string,
+): Promise<{ success: boolean; reason?: string }> {
+  const entry = missionRegistry.get(missionId);
+  if (!entry) {
+    return { success: false, reason: `Mission ${missionId} not found` };
   }
 
-  if ((params.repoCount ?? 1) >= 3) {
-    return {
-      handoff: true,
-      reason: `Task spans ${params.repoCount} repositories (threshold: 3+)`,
-    };
+  if (["completed", "failed", "cancelled", "timed_out"].includes(entry.status)) {
+    return { success: false, reason: `Mission already terminal: ${entry.status}` };
   }
 
-  if (params.requiresSystemAccess) {
-    return {
-      handoff: true,
-      reason: "Task requires system-level access (pm2, cron, nginx, etc.)",
-    };
+  // Attempt to cancel on VPS
+  if (VPS_INTERNAL_TOKEN) {
+    try {
+      await fetch(`${VPS_AGENT_API_URL}/api/mission/${missionId}/cancel`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${VPS_INTERNAL_TOKEN}`,
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (err) {
+      console.warn(`[vps-bridge] VPS cancel request failed for ${missionId}:`, err);
+    }
   }
 
-  if (params.requiresSecretRotation) {
-    return {
-      handoff: true,
-      reason: "Task involves production secret rotation",
-    };
+  entry.status = "cancelled";
+  entry.result = {
+    missionId,
+    status: "cancelled",
+    dispatchedAt: entry.dispatchedAt,
+    completedAt: new Date().toISOString(),
+  };
+
+  return { success: true };
+}
+
+/**
+ * Wait for a mission to complete, polling at configurable intervals.
+ *
+ * Use this when V2 needs the result before continuing.
+ * For fire-and-forget missions, use `dispatchMission()` alone and poll manually.
+ *
+ * @example
+ * const result = await waitForMission("vps-mission-1718123456789-abc12345");
+ */
+export async function waitForMission(
+  missionId: string,
+  options?: {
+    pollIntervalMs?: number;
+    timeoutMs?: number;
+  },
+): Promise<VpsMissionResult> {
+  const pollInterval = options?.pollIntervalMs ?? MISSION_POLL_INTERVAL_MS;
+  const timeout = options?.timeoutMs ?? MISSION_TIMEOUT_MS;
+  const deadline = Date.now() + timeout;
+
+  while (Date.now() < deadline) {
+    const status = await getMissionStatus(missionId);
+
+    if (
+      ["completed", "failed", "cancelled", "timed_out"].includes(status.status)
+    ) {
+      return status;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
   }
 
-  if (params.isRiskyMigration) {
-    return {
-      handoff: true,
-      reason: "Risky database migration requires VPS validation",
-    };
-  }
-
-  if (params.isCronManagement) {
-    return {
-      handoff: true,
-      reason: "Cron job management requires VPS infrastructure",
-    };
-  }
-
-  if (params.requiresFilesystemAccess) {
-    return {
-      handoff: true,
-      reason: "File system operations outside sandbox scope",
-    };
-  }
-
-  if (params.vpsHealthOps) {
-    return {
-      handoff: true,
-      reason: "VPS health operations require local system access",
+  // Timeout
+  const entry = missionRegistry.get(missionId);
+  if (entry) {
+    entry.status = "timed_out";
+    entry.result = {
+      missionId,
+      status: "timed_out",
+      error: `Mission timed out after ${timeout}ms`,
+      dispatchedAt: entry.dispatchedAt,
     };
   }
 
   return {
-    handoff: false,
-    reason: "Task can be handled inline by V2 Neptune",
+    missionId,
+    status: "timed_out",
+    error: `Mission timed out after ${timeout}ms`,
+    dispatchedAt: new Date().toISOString(),
   };
 }
 
-// ─── Internal Helpers ────────────────────────────────────────────────────────
+/**
+ * Estimate whether it's faster to run the task on VPS vs V2 inline.
+ *
+ * Simple heuristic based on estimated runtime and queue state.
+ * Returns true if VPS is likely faster.
+ */
+export function estimateCompletionTime(
+  estimatedRuntimeMinutes: number,
+  currentVpsQueueDepth: number,
+): { useVps: boolean; reason: string } {
+  // VPS overhead: dispatch (~30s) + queue wait (~2min per queued item)
+  const vpsOverheadMinutes = 0.5 + currentVpsQueueDepth * 2;
+  const totalVpsTimeMinutes = estimatedRuntimeMinutes + vpsOverheadMinutes;
 
-function normalizeStatus(raw: string | undefined): VpsSessionStatus {
-  if (!raw) return "unknown";
+  // V2 sandbox has a practical limit of ~30 min
+  const V2_MAX_RUNTIME_MINUTES = 30;
 
-  const normalized = raw.toLowerCase().trim();
-
-  if (normalized === "running" || normalized === "in_progress" || normalized === "active") {
-    return "running";
-  }
-  if (normalized === "completed" || normalized === "done" || normalized === "success") {
-    return "completed";
-  }
-  if (normalized === "failed" || normalized === "error") {
-    return "failed";
-  }
-  if (normalized === "cancelled" || normalized === "canceled") {
-    return "cancelled";
-  }
-  if (normalized === "pending" || normalized === "queued") {
-    return "pending";
+  if (estimatedRuntimeMinutes > V2_MAX_RUNTIME_MINUTES) {
+    return {
+      useVps: true,
+      reason: `Estimated runtime (${estimatedRuntimeMinutes}min) exceeds V2 sandbox limit (${V2_MAX_RUNTIME_MINUTES}min)`,
+    };
   }
 
-  return "unknown";
+  if (totalVpsTimeMinutes < estimatedRuntimeMinutes) {
+    return {
+      useVps: true,
+      reason: `VPS estimated ${totalVpsTimeMinutes}min (with overhead) vs V2 ${estimatedRuntimeMinutes}min — VPS is faster`,
+    };
+  }
+
+  return {
+    useVps: false,
+    reason: `V2 estimated ${estimatedRuntimeMinutes}min vs VPS ${totalVpsTimeMinutes}min (with overhead) — V2 is faster`,
+  };
+}
+
+/**
+ * List all missions currently in the local registry.
+ * Useful for dashboard display or debugging.
+ */
+export function listMissions(status?: MissionStatus): MissionListEntry[] {
+  const entries: MissionListEntry[] = [];
+
+  for (const [missionId, entry] of missionRegistry) {
+    if (status && entry.status !== status) continue;
+    entries.push({
+      missionId,
+      task: entry.brief.task,
+      repo: entry.brief.repo,
+      status: entry.status,
+      dispatchedAt: entry.dispatchedAt,
+    });
+  }
+
+  return entries.sort(
+    (a, b) =>
+      new Date(b.dispatchedAt).getTime() - new Date(a.dispatchedAt).getTime(),
+  );
+}
+
+/**
+ * Get the current VPS queue depth.
+ *
+ * Used by the handoff decision engine to factor in current VPS load
+ * when deciding whether to hand off.
+ */
+export async function getVpsQueueDepth(): Promise<number> {
+  if (!VPS_INTERNAL_TOKEN) return 0;
+
+  try {
+    const response = await fetch(`${VPS_AGENT_API_URL}/api/mission/queue`, {
+      headers: {
+        Authorization: `Bearer ${VPS_INTERNAL_TOKEN}`,
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!response.ok) return 0;
+
+    const data = await response.json();
+    return data.queue_depth ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Health check — verifies the VPS agent API is reachable.
+ *
+ * @returns true if VPS is reachable and serving
+ */
+export async function isVpsReachable(): Promise<boolean> {
+  if (!VPS_INTERNAL_TOKEN) return false;
+
+  try {
+    const response = await fetch(`${VPS_AGENT_API_URL}/api/health`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }

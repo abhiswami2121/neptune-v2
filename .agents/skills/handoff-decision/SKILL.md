@@ -121,3 +121,95 @@ Is it file system outside sandbox? ──YES→ HAND OFF TO VPS
     ↓ NO
 HANDLE INLINE (V2 Neptune)
 ```
+
+## VPS Bridge Integration
+
+The handoff decision engine is backed by the **VPS Handoff Bridge** (`lib/handoff/vps-bridge.ts`). Key integration points:
+
+### dispatchMission()
+```typescript
+import { dispatchMission } from "@/lib/handoff/vps-bridge";
+
+const response = await dispatchMission({
+  task: "Database migration: add index to 5M-row table",
+  repo: "abhiswami2121/neptune-v2",
+  estimated_runtime: "45 minutes",
+  reason_for_handoff: "Long-running DB migration + V2 sandbox timeout risk",
+  success_criteria: ["Index created successfully", "No query regressions", "Migration reversible"],
+  files_to_produce: ["migration-report.json"],
+  priority: "high",
+  tags: ["database", "migration", "postgres"],
+});
+```
+
+### getMissionStatus()
+```typescript
+import { getMissionStatus } from "@/lib/handoff/vps-bridge";
+
+// Poll every 30s
+const status = await getMissionStatus(response.missionId);
+if (status.status === "completed") {
+  console.log("Commit:", status.commit_sha);
+  console.log("PR:", status.pr_url);
+}
+```
+
+### waitForMission()
+```typescript
+import { waitForMission } from "@/lib/handoff/vps-bridge";
+
+// Block until complete (with timeout)
+const result = await waitForMission(response.missionId, {
+  pollIntervalMs: 30_000,
+  timeoutMs: 3_600_000, // 1 hour
+});
+```
+
+### Queue-Aware Handoff
+```typescript
+import { getVpsQueueDepth, estimateCompletionTime } from "@/lib/handoff/vps-bridge";
+
+const queueDepth = await getVpsQueueDepth();
+const decision = estimateCompletionTime(45, queueDepth); // 45 min estimate + queue overhead
+// { useVps: true, reason: "Estimated runtime (45min) exceeds V2 sandbox limit (30min)" }
+```
+
+### VPS Health Check
+```typescript
+import { isVpsReachable } from "@/lib/handoff/vps-bridge";
+
+if (!(await isVpsReachable())) {
+  // VPS is down — run inline with reduced scope, or queue for later
+}
+```
+
+## Discovery-Before-Code Protocol 🔍
+
+**CRITICAL: Before creating ANY new file, V2 MUST discover existing code first.**
+
+This protocol was added after a Phase 6 grading finding: V2 duplicated existing PreferencesSection (1082 lines) by creating a standalone SettingsForm without discovering the existing implementation.
+
+### Protocol Steps
+
+1. **Search the codebase** — Before writing a new component, function, or utility:
+   - Run `query_code_graph` with the task's key terms (e.g., "model preference", "settings form")
+   - Run `Grep` for similar file names or function signatures in the target directory
+   - Run `Glob` to list existing files in the target directory
+
+2. **Read existing patterns** — Before writing, read at least 2 related files:
+   - If building a component: read 2+ existing components in the same directory
+   - If building a utility: read 2+ existing utilities following the same pattern
+   - Identify the established conventions: auto-save vs Save button, hook-driven vs prop-driven, server vs client component
+
+3. **Extend, don't replace** — If a similar component/function exists:
+   - Add props/variants to the existing component rather than creating a new one
+   - If a fundamentally different UX is needed, add a variant mode (e.g., `compact` prop)
+   - Only create a new file if the existing one CANNOT be reasonably extended
+
+4. **Adopt established UX conventions** — Match what the app already does:
+   - If the app uses auto-save on change, don't build a Save button
+   - If the app uses `useUserPreferences()` hook, don't fetch preferences as props
+   - If the app uses shadcn/ui ModelCombobox, don't build a custom Select
+
+### Trigger Keywords
+"before building", "discover first", "check existing", "codebase search", "pattern match", "existing component", "don't duplicate", "discovery protocol"
