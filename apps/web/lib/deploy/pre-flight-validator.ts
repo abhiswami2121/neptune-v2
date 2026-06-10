@@ -428,7 +428,7 @@ export async function watchPostDeployAndRemediate(
     };
   };
 
-  const classifyError = (message: string): DeployEvent["error"]["class"] => {
+  const classifyError = (message: string): NonNullable<DeployEvent["error"]>["class"] => {
     if (/Module not found/i.test(message)) return "MISSING_DEP";
     if (/Type error/i.test(message) || /TS\d{4}/i.test(message)) return "TYPE_ERROR";
     if (/ENOENT/i.test(message)) return "MISSING_FILE";

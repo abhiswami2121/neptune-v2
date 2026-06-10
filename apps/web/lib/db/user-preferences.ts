@@ -10,6 +10,8 @@ import {
 import { db } from "./client";
 import { userPreferences, type UserPreferences } from "./schema";
 
+export type { UserPreferences };
+
 export type DiffMode = "unified" | "split";
 
 export interface UserPreferencesData {

@@ -3,7 +3,7 @@
  * from .agents/skills/ into the system prompt at task start.
  *
  * How it works:
- * 1. Scans .agents/skills/*/SKILL.md frontmatter (name + description)
+ * 1. Scans .agents/skills/&lt;skill-dir&gt;/SKILL.md frontmatter (name + description)
  * 2. Builds keyword-trigger index from trigger keywords in descriptions
  * 3. Scores each skill against the user prompt
  * 4. Returns top 3-5 matches for injection into system prompt

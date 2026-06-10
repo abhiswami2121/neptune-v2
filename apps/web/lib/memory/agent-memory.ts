@@ -311,7 +311,8 @@ export async function cleanupExpiredFacts(): Promise<number> {
     .delete(codingAgentMemory)
     .where(
       sql`${codingAgentMemory.createdAt} < ${expiryDate.toISOString()}`,
-    );
+    )
+    .returning({ id: codingAgentMemory.id });
 
-  return result.rowCount ?? 0;
+  return result.length;
 }

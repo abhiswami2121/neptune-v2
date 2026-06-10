@@ -139,7 +139,7 @@ export function commitWithConventionalMessage(
     );
   }
 
-  const trimmedSubject = subject.trim();
+  const trimmedSubject = subjectStr.trim();
   if (!trimmedSubject) {
     throw new Error("Commit subject is required");
   }
