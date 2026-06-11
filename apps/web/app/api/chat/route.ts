@@ -26,6 +26,8 @@ import { runAgentWorkflow } from "@/app/workflows/chat";
 import { persistAssistantMessagesWithToolResults } from "./_lib/persist-tool-results";
 import { spawnSandboxStream } from "@/lib/sandbox/spawn";
 import { loadRelevantSkills, buildSkillPromptAugmentation } from "@/lib/skills/router";
+import { gateway, defaultModelLabel } from "@open-agents/agent";
+import { streamText } from "ai";
 
 type WebAgentUIMessageChunk = InferUIMessageChunk<WebAgentUIMessage>;
 
@@ -56,6 +58,60 @@ export async function POST(req: Request) {
   const body = parsedBody.body;
   const isSandboxMode =
     body.mode === "sandbox" || body.sandboxOnly === true;
+  const isChatOnlyMode = body.mode === "chat";
+
+  // ---- CHAT-ONLY MODE: simple Q&A, no sandbox, no tools ----
+  if (isChatOnlyMode) {
+    // Accept Bearer token OR valid session cookie
+    const isAuthorized =
+      isProgrammaticAuth(req) ||
+      (await getServerSession().then((s) => s?.user != null));
+
+    if (!isAuthorized) {
+      return Response.json(
+        {
+          error:
+            "Chat mode requires Bearer token or valid session",
+        },
+        { status: 401 },
+      );
+    }
+
+    const simpleMessages = extractSimpleMessages(
+      body.messages as unknown as Record<string, unknown>[],
+    );
+
+    if (simpleMessages.length === 0) {
+      return Response.json(
+        { error: "At least one user message is required for chat mode" },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const { stream } = await spawnChatStream(
+        simpleMessages,
+        body.modelId,
+      );
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    } catch (err) {
+      console.error("[chat-only-error]", {
+        message: err instanceof Error ? err.message : String(err),
+        timestamp: new Date().toISOString(),
+      });
+      return Response.json(
+        { error: "Failed to process chat request" },
+        { status: 500 },
+      );
+    }
+  }
 
   // ---- SANDBOX-ONLY MODE: programmatic auth + ephemeral sandbox ----
   if (isSandboxMode) {
@@ -252,6 +308,35 @@ export async function POST(req: Request) {
       { status: 500 },
     );
   }
+}
+
+/**
+ * Chat-only mode: lightweight Q&A with no sandbox provisioning.
+ * Uses streamText with gateway model, no tools. Returns standard
+ * UI message stream response compatible with useChat / DefaultChatTransport.
+ */
+const MAX_CHAT_OUTPUT_TOKENS = 4000;
+
+async function spawnChatStream(
+  messages: { role: string; content: string }[],
+  modelId?: string,
+): Promise<{ stream: ReadableStream<Uint8Array> }> {
+  const model = gateway(modelId ?? defaultModelLabel);
+
+  const coreMessages = messages.map((m) => ({
+    role: m.role as "system" | "user" | "assistant",
+    content: m.content,
+  }));
+
+  const result = streamText({
+    model,
+    messages: coreMessages,
+    maxOutputTokens: MAX_CHAT_OUTPUT_TOKENS,
+  });
+
+  const response = result.toUIMessageStreamResponse();
+
+  return { stream: response.body! };
 }
 
 type ExistingActiveStreamResolution =
