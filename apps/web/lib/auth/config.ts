@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import type {
@@ -126,11 +127,58 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        before: async (user) => ({
-          data: {
-            username: deriveAuthUsername(user),
-          },
-        }),
+        before: async (user) => {
+          const ALLOWED_EMAILS: string[] = [
+            "abhiswami2121@gmail.com",
+            "jerry.b.yirenkyi@gmail.com",
+          ];
+
+          const email =
+            typeof user.email === "string"
+              ? user.email.toLowerCase().trim()
+              : null;
+
+          if (email && !ALLOWED_EMAILS.includes(email)) {
+            throw new Error(
+              `Email ${email} is not authorized for Neptune V2 access.`,
+            );
+          }
+
+          return {
+            data: {
+              username: deriveAuthUsername(user),
+            },
+          };
+        },
+      },
+    },
+    session: {
+      create: {
+        before: async (session) => {
+          const ALLOWED_EMAILS: string[] = [
+            "abhiswami2121@gmail.com",
+            "jerry.b.yirenkyi@gmail.com",
+          ];
+
+          try {
+            const [user] = await db
+              .select({ email: schema.users.email })
+              .from(schema.users)
+              .where(eq(schema.users.id, session.userId))
+              .limit(1);
+
+            const email =
+              typeof user?.email === "string"
+                ? user.email.toLowerCase().trim()
+                : null;
+
+            if (email && !ALLOWED_EMAILS.includes(email)) {
+              return false;
+            }
+          } catch {
+            // If we can't query, allow — user.create.before already validated new users
+          }
+        },
       },
     },
   },
