@@ -4,7 +4,6 @@
  * Returns V2's identity, repo, Vercel project, capabilities,
  * and sibling agent (Neptune Chat) info. Used by cross-agent awareness.
  */
-import { NextResponse } from "next/server";
 
 const V2_CONTEXT = {
   agent: "Neptune V2",
@@ -25,7 +24,7 @@ export async function GET() {
     process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
     "unknown";
 
-  return NextResponse.json(
+  return Response.json(
     {
       ...V2_CONTEXT,
       currentCommit: commitSha,
