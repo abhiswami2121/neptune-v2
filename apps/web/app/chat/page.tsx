@@ -2,20 +2,100 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { useState, useRef, useEffect } from "react";
-import { Send, Sparkles } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Send, Sparkles, Loader2, AlertCircle, RefreshCw, LogIn } from "lucide-react";
+
+type BootstrapState =
+  | { phase: "idle" }
+  | { phase: "loading" }
+  | {
+      phase: "ready";
+      sessionId: string;
+      chatId: string;
+    }
+  | { phase: "error"; message: string };
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
+  const [bootstrap, setBootstrap] = useState<BootstrapState>({ phase: "idle" });
+  const [needsAuth, setNeedsAuth] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Build the body for the chat transport based on bootstrap state
+  const chatBody = useCallback(() => {
+    const base: Record<string, unknown> = { mode: "chat" };
+    if (bootstrap.phase === "ready") {
+      base.sessionId = bootstrap.sessionId;
+      base.chatId = bootstrap.chatId;
+    }
+    return base;
+  }, [bootstrap]);
 
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
-      body: { mode: "chat" },
+      body: chatBody(),
     }),
   });
+
+  // Bootstrap session+chat on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrapSession() {
+      setBootstrap({ phase: "loading" });
+
+      try {
+        const res = await fetch("/api/sessions/quick-start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Chat" }),
+        });
+
+        if (res.status === 401) {
+          if (!cancelled) {
+            setNeedsAuth(true);
+            setBootstrap({ phase: "error", message: "Sign in required to enable chat persistence. You can still chat in ephemeral mode." });
+          }
+          return;
+        }
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `Failed to create session (${res.status})`);
+        }
+
+        const data = await res.json();
+        if (!cancelled) {
+          setBootstrap({
+            phase: "ready",
+            sessionId: data.sessionId,
+            chatId: data.chatId,
+          });
+          setNeedsAuth(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setBootstrap({
+            phase: "error",
+            message: err instanceof Error ? err.message : "Could not start chat session",
+          });
+        }
+      }
+    }
+
+    bootstrapSession();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Retry bootstrap
+  const handleRetry = useCallback(() => {
+    setNeedsAuth(false);
+    setBootstrap({ phase: "idle" });
+    // Re-trigger the effect by forcing a re-render
+    setTimeout(() => setBootstrap({ phase: "loading" }), 0);
+  }, []);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -45,6 +125,7 @@ export default function ChatPage() {
   };
 
   const isLoading = status === "streaming" || status === "submitted";
+  const isBootstrapping = bootstrap.phase === "loading" || bootstrap.phase === "idle";
 
   return (
     <div className="flex flex-col h-dvh bg-background">
@@ -56,23 +137,94 @@ export default function ChatPage() {
         <div>
           <h1 className="text-sm font-semibold">Neptune Chat</h1>
           <p className="text-xs text-muted-foreground">
-            {isLoading ? "Thinking…" : "Ask me anything"}
+            {isLoading ? "Thinking…" : isBootstrapping ? "Initializing…" : "Ask me anything"}
           </p>
         </div>
+        {/* Bootstrap status indicator */}
+        <div className="ml-auto flex items-center gap-2">
+          {bootstrap.phase === "loading" && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <Loader2 size={12} className="animate-spin" />
+              Initializing…
+            </span>
+          )}
+          {bootstrap.phase === "ready" && (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-600">
+              <span className="size-1.5 rounded-full bg-emerald-500" />
+              Connected
+            </span>
+          )}
+          {bootstrap.phase === "error" && !needsAuth && (
+            <button
+              onClick={handleRetry}
+              className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700"
+            >
+              <AlertCircle size={12} />
+              Retry
+            </button>
+          )}
+        </div>
       </header>
+
+      {/* Auth gate */}
+      {needsAuth && (
+        <div className="shrink-0 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2.5">
+          <div className="max-w-2xl mx-auto flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200">
+            <LogIn size={14} />
+            <span>Sign in to save your chat history.</span>
+            <a
+              href="/api/auth/signin"
+              className="ml-auto inline-flex items-center gap-1 rounded-md bg-amber-600 text-white px-3 py-1 text-xs font-medium hover:bg-amber-700 transition-colors"
+            >
+              Sign In
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="flex size-16 items-center justify-center rounded-2xl bg-muted/50 ring-1 ring-border/50 mb-4">
-              <Sparkles size={28} className="text-muted-foreground" />
-            </div>
-            <h2 className="text-lg font-semibold mb-2">Neptune Chat</h2>
-            <p className="text-sm text-muted-foreground max-w-sm">
-              Simple Q&amp;A mode — no sandbox, no coding tools. Just chat.
-              For coding tasks, create a session with a repo.
-            </p>
+            {isBootstrapping ? (
+              <>
+                <div className="flex size-16 items-center justify-center rounded-2xl bg-muted/50 ring-1 ring-border/50 mb-4">
+                  <Loader2 size={28} className="text-muted-foreground animate-spin" />
+                </div>
+                <h2 className="text-lg font-semibold mb-2">Starting Chat</h2>
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  Setting up your session…
+                </p>
+              </>
+            ) : bootstrap.phase === "error" && !needsAuth ? (
+              <>
+                <div className="flex size-16 items-center justify-center rounded-2xl bg-red-50 dark:bg-red-950/30 ring-1 ring-red-200 dark:ring-red-800 mb-4">
+                  <AlertCircle size={28} className="text-red-500" />
+                </div>
+                <h2 className="text-lg font-semibold mb-2">Could Not Start Chat</h2>
+                <p className="text-sm text-muted-foreground max-w-sm mb-3">
+                  {bootstrap.message}
+                </p>
+                <button
+                  onClick={handleRetry}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors"
+                >
+                  <RefreshCw size={14} />
+                  Try Again
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex size-16 items-center justify-center rounded-2xl bg-muted/50 ring-1 ring-border/50 mb-4">
+                  <Sparkles size={28} className="text-muted-foreground" />
+                </div>
+                <h2 className="text-lg font-semibold mb-2">Neptune Chat</h2>
+                <p className="text-sm text-muted-foreground max-w-sm">
+                  Simple Q&amp;A mode — no sandbox, no coding tools. Just chat.
+                  For coding tasks, create a session with a repo.
+                </p>
+              </>
+            )}
           </div>
         )}
 
@@ -158,14 +310,18 @@ export default function ChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message…"
+            placeholder={
+              isBootstrapping
+                ? "Initializing chat…"
+                : "Type a message…"
+            }
             rows={1}
-            disabled={isLoading}
+            disabled={isLoading || bootstrap.phase === "error"}
             className="flex-1 resize-none rounded-xl border bg-muted/40 px-4 py-2.5 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 disabled:opacity-50"
           />
           <button
             type="submit"
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || isLoading || bootstrap.phase === "error"}
             className="shrink-0 flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
             aria-label="Send message"
           >
