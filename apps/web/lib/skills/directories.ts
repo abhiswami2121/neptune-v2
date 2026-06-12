@@ -6,10 +6,17 @@ import { resolveSandboxHomeDirectory } from "@/lib/sandbox/home-directory";
 
 const PROJECT_SKILL_BASE_FOLDERS = [".claude", ".agents"];
 
+/** Repo-shipped built-in skills directory (relative to repo root). */
+const BUILTIN_SKILLS_PATH = "skills/built-in";
+
 export function getProjectSkillDirectories(workingDirectory: string): string[] {
-  return PROJECT_SKILL_BASE_FOLDERS.map((folder) =>
-    path.posix.join(workingDirectory, folder, "skills"),
-  );
+  return [
+    ...PROJECT_SKILL_BASE_FOLDERS.map((folder) =>
+      path.posix.join(workingDirectory, folder, "skills"),
+    ),
+    // Built-in skills shipped with the V2 repo
+    path.posix.join(workingDirectory, BUILTIN_SKILLS_PATH),
+  ];
 }
 
 export function getGlobalSkillsDirectory(homeDirectory: string): string {

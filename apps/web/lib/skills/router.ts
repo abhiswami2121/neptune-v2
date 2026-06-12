@@ -34,6 +34,7 @@ export interface SkillLoadResult {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const SKILLS_DIR = join(process.cwd(), ".agents", "skills");
+const BUILTIN_SKILLS_DIR = join(process.cwd(), "skills", "built-in");
 const MAX_SKILLS_TO_LOAD = 5;
 
 // ─── Frontmatter Parser ──────────────────────────────────────────────────────
@@ -87,13 +88,10 @@ function extractTriggers(description: string): string[] {
 /**
  * Discover all available SKILL.md files and parse their frontmatter.
  */
-export function discoverSkills(skillsDir: string = SKILLS_DIR): SkillFrontmatter[] {
+function discoverSkillsFromDir(skillsDir: string): SkillFrontmatter[] {
   const skills: SkillFrontmatter[] = [];
 
-  if (!existsSync(skillsDir)) {
-    console.warn(`[skills/router] Skills directory not found: ${skillsDir}`);
-    return skills;
-  }
+  if (!existsSync(skillsDir)) return skills;
 
   const entries = readdirSync(skillsDir, { withFileTypes: true });
 
@@ -116,6 +114,21 @@ export function discoverSkills(skillsDir: string = SKILLS_DIR): SkillFrontmatter
     } catch (err) {
       console.warn(`[skills/router] Failed to read skill: ${skillPath}`, err);
     }
+  }
+
+  return skills;
+}
+
+export function discoverSkills(skillsDir: string = SKILLS_DIR): SkillFrontmatter[] {
+  const skills = discoverSkillsFromDir(skillsDir);
+
+  // Also scan built-in skills shipped with the repo
+  if (existsSync(BUILTIN_SKILLS_DIR) && BUILTIN_SKILLS_DIR !== skillsDir) {
+    skills.push(...discoverSkillsFromDir(BUILTIN_SKILLS_DIR));
+  }
+
+  if (skills.length === 0) {
+    console.warn(`[skills/router] No skills found in: ${skillsDir}, ${BUILTIN_SKILLS_DIR}`);
   }
 
   return skills;
