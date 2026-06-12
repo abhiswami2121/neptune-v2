@@ -48,6 +48,11 @@ import {
   notifyCodeChange,
 } from "@/lib/slack-notify";
 import { getChatById, getSessionById } from "@/lib/db/sessions";
+import {
+  createAgentSession,
+  updateAgentSession,
+  appendSessionEvent,
+} from "@/lib/session-store";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
   filterModelVariantsForSession,
@@ -764,6 +769,19 @@ export async function runAgentWorkflow(options: Options) {
       model: modelId,
     }).catch((err) => console.warn("[slack-notify] session_started failed:", err));
 
+    // U2.5A.2: Create agent session for tracking
+    createAgentSession({
+      goal: runtime.sessionTitle || options.chatId,
+      model: modelId,
+      mode: "workflow",
+      repo: runtime.repoOwner && runtime.repoName
+        ? `${runtime.repoOwner}/${runtime.repoName}`
+        : undefined,
+      branch: runtime.currentBranch,
+      chatId: options.chatId,
+      v2SessionId: options.sessionId,
+    }).catch((err) => console.warn("[session-store] create failed:", err));
+
     for (
       let step = 0;
       options.maxSteps === undefined || step < options.maxSteps;
@@ -1007,6 +1025,16 @@ export async function runAgentWorkflow(options: Options) {
       goal: runtime.sessionTitle || options.chatId,
       durationMs: runDurationMs,
     }).catch((err) => console.warn("[slack-notify] completion failed:", err));
+
+    // U2.5A.2: Update agent session on completion
+    updateAgentSession(options.sessionId, {
+      status: workflowStatus === "completed" ? "completed" : "failed",
+      durationMs: runDurationMs,
+    }).catch((err) => console.warn("[session-store] update failed:", err));
+    appendSessionEvent(options.sessionId, "completion", {
+      status: workflowStatus,
+      durationMs: runDurationMs,
+    }).catch((err) => console.warn("[session-store] event failed:", err));
   } catch (error) {
     workflowStatus = wasAborted ? "aborted" : "failed";
     caughtError = error;
@@ -1017,6 +1045,17 @@ export async function runAgentWorkflow(options: Options) {
       sessionId: options.sessionId,
       error: errorMessage,
     }).catch((err) => console.warn("[slack-notify] error notify failed:", err));
+
+    // U2.5A.2: Update agent session on error
+    updateAgentSession(options.sessionId, {
+      status: "failed",
+      error: errorMessage,
+      durationMs: Date.now() - runStartedAt.getTime(),
+    }).catch((err) => console.warn("[session-store] update failed:", err));
+    appendSessionEvent(options.sessionId, "error", {
+      message: errorMessage,
+      timestamp: Date.now(),
+    }).catch((err) => console.warn("[session-store] event failed:", err));
 
     // Structured error log for Vercel runtime diagnostics.
     // All chat failures land here — grep for '[chat-stream-error]'.
