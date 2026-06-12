@@ -40,6 +40,13 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
+import {
+  notifySlack,
+  notifySessionStarted,
+  notifyError as notifySlackError,
+  notifyCompletion,
+  notifyCodeChange,
+} from "@/lib/slack-notify";
 import { getChatById, getSessionById } from "@/lib/db/sessions";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
@@ -750,6 +757,13 @@ export async function runAgentWorkflow(options: Options) {
     };
     sandboxState = runtime.sandboxState;
 
+    // U2.5A.1: Notify Slack on session start
+    notifySessionStarted({
+      sessionId: options.sessionId,
+      goal: runtime.sessionTitle || options.chatId,
+      model: modelId,
+    }).catch((err) => console.warn("[slack-notify] session_started failed:", err));
+
     for (
       let step = 0;
       options.maxSteps === undefined || step < options.maxSteps;
@@ -891,6 +905,13 @@ export async function runAgentWorkflow(options: Options) {
         await sendDataPart(writable, resolvedCommitPart);
         didUpdateGitData = true;
         shouldRefreshCachedDiff = true;
+
+        // U2.5A.1: Notify Slack on code change (commit)
+        notifyCodeChange({
+          sessionId: options.sessionId,
+          repo: `${repoOwner}/${repoName}`,
+          branch: runtime.currentBranch || "main",
+        }).catch((err) => console.warn("[slack-notify] code_change failed:", err));
       } else {
         autoCommitResult = {
           committed: false,
@@ -978,9 +999,24 @@ export async function runAgentWorkflow(options: Options) {
       : exhaustedMaxSteps
         ? "failed"
         : "completed";
+
+    // U2.5A.1: Notify Slack on completion
+    const runDurationMs = Date.now() - runStartedAt.getTime();
+    notifyCompletion({
+      sessionId: options.sessionId,
+      goal: runtime.sessionTitle || options.chatId,
+      durationMs: runDurationMs,
+    }).catch((err) => console.warn("[slack-notify] completion failed:", err));
   } catch (error) {
     workflowStatus = wasAborted ? "aborted" : "failed";
     caughtError = error;
+
+    // U2.5A.1: Notify Slack on error
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    notifySlackError({
+      sessionId: options.sessionId,
+      error: errorMessage,
+    }).catch((err) => console.warn("[slack-notify] error notify failed:", err));
 
     // Structured error log for Vercel runtime diagnostics.
     // All chat failures land here — grep for '[chat-stream-error]'.
