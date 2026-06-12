@@ -48,12 +48,31 @@ import {
   notifyCodeChange,
 } from "@/lib/slack-notify";
 import { getChatById, getSessionById } from "@/lib/db/sessions";
-import {
-  createAgentSession,
-  updateAgentSession,
-  appendSessionEvent,
-} from "@/lib/session-store";
 import { getUserPreferences } from "@/lib/db/user-preferences";
+
+// U2.5A.2: Agent session lifecycle — uses internal API calls to avoid
+// importing Node.js modules (ioredis/postgres) in workflow functions.
+const AGENT_SESSIONS_API = `${process.env.VERCEL_PROJECT_PRODUCTION_URL || "https://neptune-v2.vercel.app"}/api/agent-sessions`;
+const INTERNAL_AUTH = `Bearer ${process.env.NEPTUNE_INTERNAL_TOKEN || ""}`;
+
+async function notifyAgentSession(
+  path: string,
+  method: string,
+  body?: Record<string, unknown>,
+) {
+  try {
+    await fetch(`${AGENT_SESSIONS_API}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: INTERNAL_AUTH,
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch {
+    // Non-critical — swallow errors in agent session tracking
+  }
+}
 import {
   filterModelVariantsForSession,
   sanitizeSelectedModelIdForSession,
@@ -769,8 +788,8 @@ export async function runAgentWorkflow(options: Options) {
       model: modelId,
     }).catch((err) => console.warn("[slack-notify] session_started failed:", err));
 
-    // U2.5A.2: Create agent session for tracking
-    createAgentSession({
+    // U2.5A.2: Create agent session for tracking (via internal API)
+    notifyAgentSession("", "POST", {
       goal: runtime.sessionTitle || options.chatId,
       model: modelId,
       mode: "workflow",
@@ -779,8 +798,8 @@ export async function runAgentWorkflow(options: Options) {
         : undefined,
       branch: runtime.currentBranch,
       chatId: options.chatId,
-      v2SessionId: options.sessionId,
-    }).catch((err) => console.warn("[session-store] create failed:", err));
+      sessionId: options.sessionId,
+    });
 
     for (
       let step = 0;
@@ -1026,15 +1045,11 @@ export async function runAgentWorkflow(options: Options) {
       durationMs: runDurationMs,
     }).catch((err) => console.warn("[slack-notify] completion failed:", err));
 
-    // U2.5A.2: Update agent session on completion
-    updateAgentSession(options.sessionId, {
+    // U2.5A.2: Update agent session on completion (via internal API)
+    notifyAgentSession(`/${options.sessionId}`, "PATCH", {
       status: workflowStatus === "completed" ? "completed" : "failed",
       durationMs: runDurationMs,
-    }).catch((err) => console.warn("[session-store] update failed:", err));
-    appendSessionEvent(options.sessionId, "completion", {
-      status: workflowStatus,
-      durationMs: runDurationMs,
-    }).catch((err) => console.warn("[session-store] event failed:", err));
+    });
   } catch (error) {
     workflowStatus = wasAborted ? "aborted" : "failed";
     caughtError = error;
@@ -1046,16 +1061,16 @@ export async function runAgentWorkflow(options: Options) {
       error: errorMessage,
     }).catch((err) => console.warn("[slack-notify] error notify failed:", err));
 
-    // U2.5A.2: Update agent session on error
-    updateAgentSession(options.sessionId, {
+    // U2.5A.2: Update agent session on error + append error event (via internal API)
+    notifyAgentSession(`/${options.sessionId}`, "PATCH", {
       status: "failed",
       error: errorMessage,
       durationMs: Date.now() - runStartedAt.getTime(),
-    }).catch((err) => console.warn("[session-store] update failed:", err));
-    appendSessionEvent(options.sessionId, "error", {
-      message: errorMessage,
-      timestamp: Date.now(),
-    }).catch((err) => console.warn("[session-store] event failed:", err));
+    });
+    notifyAgentSession(`/${options.sessionId}/events`, "POST", {
+      type: "error",
+      data: { message: errorMessage, timestamp: Date.now() },
+    });
 
     // Structured error log for Vercel runtime diagnostics.
     // All chat failures land here — grep for '[chat-stream-error]'.
