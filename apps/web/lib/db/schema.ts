@@ -315,6 +315,43 @@ export const workflowRunSteps = pgTable(
   ],
 );
 
+// ── U2.5A.2: Agent Sessions (prompting infrastructure) ──────────────────
+
+export const agentSessions = pgTable(
+  "agent_sessions",
+  {
+    id: text("id").primaryKey(),
+    goal: text("goal"),
+    model: text("model"),
+    status: text("status", {
+      enum: ["started", "running", "completed", "failed", "aborted"],
+    })
+      .notNull()
+      .default("started"),
+    mode: text("mode").default("sandbox"),
+    repo: text("repo"),
+    branch: text("branch"),
+    prUrl: text("pr_url"),
+    deployUrl: text("deploy_url"),
+    error: text("error"),
+    sandboxId: text("sandbox_id"),
+    chatId: text("chat_id"),
+    sessionId: text("v2_session_id"),
+    durationMs: integer("duration_ms"),
+    startedAt: timestamp("started_at").notNull().defaultNow(),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_sessions_status_idx").on(table.status),
+    index("agent_sessions_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export type AgentSession = typeof agentSessions.$inferSelect;
+export type NewAgentSession = typeof agentSessions.$inferInsert;
+
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 export type VercelProjectLink = typeof vercelProjectLinks.$inferSelect;
