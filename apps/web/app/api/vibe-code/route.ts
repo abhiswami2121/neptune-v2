@@ -69,11 +69,12 @@ function isProgrammaticAuth(req: Request): boolean {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return false;
   const bearerToken = authHeader.slice(7);
-  const expectedToken = process.env.NEPTUNE_TEST_TOKEN;
-  const e2eToken = process.env.NEPTUNE_E2E_TEST_TOKEN;
-  if (expectedToken && bearerToken === expectedToken) return true;
-  if (e2eToken && bearerToken === e2eToken) return true;
-  return false;
+  const candidates = [
+    process.env.NEPTUNE_INTERNAL_TOKEN,
+    process.env.NEPTUNE_TEST_TOKEN,
+    process.env.NEPTUNE_E2E_TEST_TOKEN,
+  ];
+  return candidates.some((expected) => !!(expected && bearerToken === expected));
 }
 
 function emit(event: string, data: Record<string, unknown>): string {

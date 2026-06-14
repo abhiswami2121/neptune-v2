@@ -97,11 +97,13 @@ function isProgrammaticAuth(req: Request): boolean {
     return false;
   }
   const bearerToken = authHeader.slice(7);
-  const expectedToken = process.env.NEPTUNE_TEST_TOKEN;
-  if (!expectedToken) {
-    return false;
-  }
-  return bearerToken === expectedToken;
+  // Accept NEPTUNE_INTERNAL_TOKEN, NEPTUNE_TEST_TOKEN, or NEPTUNE_E2E_TEST_TOKEN
+  const candidates = [
+    process.env.NEPTUNE_INTERNAL_TOKEN,
+    process.env.NEPTUNE_TEST_TOKEN,
+    process.env.NEPTUNE_E2E_TEST_TOKEN,
+  ];
+  return candidates.some((expected) => !!(expected && bearerToken === expected));
 }
 
 export async function GET(req: Request) {
