@@ -4,8 +4,10 @@ export interface ChatRequestBody {
   messages: WebAgentUIMessage[];
   sessionId?: string;
   chatId?: string;
-  /** When 'sandbox', skips GitHub/PR features and runs in ephemeral sandbox mode */
-  mode?: "sandbox" | "chat";
+  /** When 'sandbox', skips GitHub/PR features and runs in ephemeral sandbox mode.
+   *  When 'chat', runs lightweight Q&A without sandbox provisioning.
+   *  When 'swarm', runs parallel multi-specialist (Planner + Coder + Reviewer) execution. */
+  mode?: "sandbox" | "chat" | "swarm";
   /** Alternative to mode: 'sandbox' — triggers sandbox-only ephemeral execution */
   sandboxOnly?: boolean;
   /** Optional model ID override for sandbox mode */

@@ -13,7 +13,12 @@
  */
 
 import { FatalError, getWorkflowMetadata, getWritable, sleep } from "workflow";
-import type { UIMessageChunk } from "ai";
+import { generateText, type UIMessageChunk } from "ai";
+import { gateway, defaultModelLabel } from "@open-agents/agent";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export interface SwarmTask {
   id: string;
@@ -46,8 +51,38 @@ export interface SwarmResult {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-agent step
+// Specialist model routing
 // ---------------------------------------------------------------------------
+
+type SpecialistRole = "planner" | "coder" | "reviewer";
+
+const SPECIALIST_PROMPTS: Record<SpecialistRole, string> = {
+  planner:
+    "You are an architecture planner. Analyze the task and produce a detailed, actionable implementation plan. Break it into concrete steps. Do NOT write code — only plan.",
+  coder:
+    "You are a senior software engineer. Implement the task following best practices. Write production-quality code. Be concise and direct.",
+  reviewer:
+    "You are a code reviewer. Validate the implementation for correctness, security, performance, and style. Report bugs, suggest improvements, and confirm what looks good.",
+};
+
+const SPECIALIST_MODELS: Record<SpecialistRole, string> = {
+  planner: "anthropic/claude-sonnet-4.6",
+  coder: "deepseek/deepseek-v4-pro",
+  reviewer: "openai/gpt-5-codex",
+};
+
+function getModelForTask(taskId: string): { modelId: string; role: SpecialistRole } {
+  // Map task ID to specialist role and model
+  if (taskId === "planner") return { modelId: SPECIALIST_MODELS.planner, role: "planner" };
+  if (taskId === "reviewer") return { modelId: SPECIALIST_MODELS.reviewer, role: "reviewer" };
+  return { modelId: SPECIALIST_MODELS.coder, role: "coder" };
+}
+
+// ---------------------------------------------------------------------------
+// Sub-agent step — real model call
+// ---------------------------------------------------------------------------
+
+const SWARM_TIMEOUT_MS = 180_000; // 3 minutes per task
 
 async function executeSingleTask(
   task: SwarmTask,
@@ -56,50 +91,75 @@ async function executeSingleTask(
   "use step";
 
   const startedAt = Date.now();
+  const { modelId, role } = getModelForTask(task.id);
+  const systemPrompt = `${SPECIALIST_PROMPTS[role]}\n\nTask context: ${task.context ?? task.description}`;
   let retries = 0;
-  const maxRetries = 3;
+  const maxRetries = 2;
+
+  // Emit specialist start event
+  const writable = getWritable<UIMessageChunk>();
+  const writer = writable.getWriter();
+  try {
+    await writer.write({
+      type: "text-start",
+      id: `swarm-${task.id}`,
+    } satisfies UIMessageChunk);
+    await writer.write({
+      type: "text-delta",
+      id: `swarm-${task.id}`,
+      delta: JSON.stringify({
+        event: "specialist-start",
+        taskId: task.id,
+        role,
+        modelId,
+        timestamp: new Date().toISOString(),
+      }),
+    } satisfies UIMessageChunk);
+  } finally {
+    writer.releaseLock();
+  }
 
   while (retries <= maxRetries) {
     try {
-      // Simulate agent work — in production, this would call openAgent.stream()
-      // with task-specific instructions. For now, we emit observability events.
-      const stepMeta = {
-        taskId: task.id,
-        step: retries + 1,
-        maxSteps,
-        context: task.context?.slice(0, 100),
-      };
+      const model = gateway(modelId);
 
-      // Emit progress to the writable stream
-      const writable = getWritable<UIMessageChunk>();
-      const writer = writable.getWriter();
+      const result = await generateText({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: task.description },
+        ],
+        maxOutputTokens: 4096,
+        abortSignal: AbortSignal.timeout(SWARM_TIMEOUT_MS),
+      });
+
+      // Emit specialist output
+      const outWriter = writable.getWriter();
       try {
-        await writer.write({
-          type: "text-start",
-          id: `swarm-${task.id}`,
-        } satisfies UIMessageChunk);
-        await writer.write({
+        await outWriter.write({
           type: "text-delta",
           id: `swarm-${task.id}`,
           delta: JSON.stringify({
-            event: "swarm-step",
-            ...stepMeta,
+            event: "specialist-output",
+            taskId: task.id,
+            role,
+            modelId,
+            output: result.text.slice(0, 2000), // Truncate for streaming
             timestamp: new Date().toISOString(),
           }),
         } satisfies UIMessageChunk);
-        await writer.write({
+        await outWriter.write({
           type: "text-end",
           id: `swarm-${task.id}`,
         } satisfies UIMessageChunk);
       } finally {
-        writer.releaseLock();
+        outWriter.releaseLock();
       }
 
-      // Success path
       return {
         taskId: task.id,
         status: "completed",
-        output: `Task "${task.description}" processed`,
+        output: result.text,
         retries,
         durationMs: Date.now() - startedAt,
       };
@@ -108,6 +168,27 @@ async function executeSingleTask(
       const message = error instanceof Error ? error.message : String(error);
 
       if (retries > maxRetries) {
+        // Emit error
+        const errWriter = writable.getWriter();
+        try {
+          await errWriter.write({
+            type: "text-delta",
+            id: `swarm-${task.id}`,
+            delta: JSON.stringify({
+              event: "specialist-error",
+              taskId: task.id,
+              error: message,
+              timestamp: new Date().toISOString(),
+            }),
+          } satisfies UIMessageChunk);
+          await errWriter.write({
+            type: "text-end",
+            id: `swarm-${task.id}`,
+          } satisfies UIMessageChunk);
+        } finally {
+          errWriter.releaseLock();
+        }
+
         return {
           taskId: task.id,
           status: "failed",
@@ -117,9 +198,7 @@ async function executeSingleTask(
         };
       }
 
-      // Exponential backoff before retry
-      const backoffMs = Math.min(1000 * Math.pow(2, retries - 1), 8000);
-      await sleep(`${backoffMs}ms`);
+      await sleep(`${Math.min(1000 * Math.pow(2, retries - 1), 8000)}ms`);
     }
   }
 

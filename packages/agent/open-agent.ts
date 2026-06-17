@@ -87,7 +87,10 @@ export const openAgent = new ToolLoopAgent({
   model: defaultModel,
   instructions: buildSystemPrompt({}),
   tools,
-  stopWhen: stepCountIs(1),
+  // Allow up to 5 model calls per agent.stream() invocation for multi-step
+  // reasoning (plan → explore → code → verify) within a single prompt cache.
+  // The outer runAgentWorkflow loop handles iteration beyond this.
+  stopWhen: stepCountIs(5),
   callOptionsSchema,
   prepareStep: ({ messages, model, steps: _steps }) => {
     return {

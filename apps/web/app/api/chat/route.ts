@@ -23,6 +23,7 @@ import {
 } from "./_lib/chat-context";
 import { parseChatRequestBody, requireChatIdentifiers } from "./_lib/request";
 import { runAgentWorkflow } from "@/app/workflows/chat";
+import { runAgentSwarm, type SwarmInput } from "@/app/workflows/agent-swarm";
 import { persistAssistantMessagesWithToolResults } from "./_lib/persist-tool-results";
 import { spawnSandboxStream } from "@/lib/sandbox/spawn";
 import { loadRelevantSkills, buildSkillPromptAugmentation } from "@/lib/skills/router";
@@ -246,6 +247,90 @@ export async function POST(req: Request) {
     }
   }
 
+  // ---- SWARM MODE: multi-specialist parallel execution ----
+  const isSwarmMode = body.mode === "swarm";
+  if (isSwarmMode) {
+    // Validate swarm input — requires at least a user message
+    const userMessages = (body.messages as WebAgentUIMessage[])
+      .filter((m) => m.role === "user");
+    if (userMessages.length === 0) {
+      return Response.json(
+        { error: "At least one user message is required for swarm mode" },
+        { status: 400 },
+      );
+    }
+
+    const lastUserMessage = userMessages.at(-1)!;
+    const userPrompt = lastUserMessage.parts
+      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join("\n");
+
+    // Build swarm tasks from decomposition (or single task for simple prompts)
+    const swarmInput: SwarmInput = {
+      tasks: [
+        {
+          id: "planner",
+          description: `Analyze and plan: ${userPrompt.slice(0, 200)}`,
+          context: "You are the architecture planner. Analyze the task and create a detailed implementation plan.",
+        },
+        {
+          id: "coder",
+          description: `Implement: ${userPrompt.slice(0, 200)}`,
+          context: "You are the implementer. Write the actual code following the plan.",
+        },
+        {
+          id: "reviewer",
+          description: `Review implementation of: ${userPrompt.slice(0, 200)}`,
+          context: "You are the code reviewer. Validate correctness, find bugs, and suggest improvements.",
+        },
+      ],
+      maxStepsPerTask: 25,
+    };
+
+    try {
+      await Promise.all([
+        persistLatestUserMessage(chatId, messages),
+        persistAssistantMessagesWithToolResults(chatId, messages),
+      ]);
+
+      const run = await start(runAgentSwarm, [swarmInput]);
+
+      const claimed = await claimChatActiveStreamId(chatId, run.runId);
+      if (!claimed) {
+        try {
+          const { getRun } = await import("workflow/api");
+          getRun(run.runId).cancel();
+        } catch { /* best-effort */ }
+        return Response.json(
+          { error: "Another workflow is already running for this chat" },
+          { status: 409 },
+        );
+      }
+
+      const stream = createCancelableReadableStream(
+        run.getReadable<WebAgentUIMessageChunk>(),
+      );
+
+      return createUIMessageStreamResponse({
+        stream,
+        headers: {
+          "x-workflow-run-id": run.runId,
+          "x-swarm-mode": "true",
+        },
+      });
+    } catch (err) {
+      console.error("[chat-swarm-error]", {
+        message: err instanceof Error ? err.message : String(err),
+        timestamp: new Date().toISOString(),
+      });
+      return Response.json(
+        { error: "Failed to start swarm workflow" },
+        { status: 500 },
+      );
+    }
+  }
+
   try {
     await Promise.all([
       persistLatestUserMessage(chatId, messages),
@@ -318,6 +403,7 @@ export async function POST(req: Request) {
  * UI message stream response compatible with useChat / DefaultChatTransport.
  */
 const MAX_CHAT_OUTPUT_TOKENS = 4000;
+const CHAT_ONLY_TIMEOUT_MS = 120_000; // 2 minute timeout for chat-only mode
 
 async function spawnChatStream(
   messages: { role: string; content: string }[],
@@ -330,15 +416,54 @@ async function spawnChatStream(
     content: m.content,
   }));
 
-  const result = streamText({
-    model,
-    messages: coreMessages,
-    maxOutputTokens: MAX_CHAT_OUTPUT_TOKENS,
-  });
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), CHAT_ONLY_TIMEOUT_MS);
 
-  const response = result.toUIMessageStreamResponse();
+  try {
+    const result = streamText({
+      model,
+      messages: coreMessages,
+      maxOutputTokens: MAX_CHAT_OUTPUT_TOKENS,
+      abortSignal: abortController.signal,
+    });
 
-  return { stream: response.body! };
+    const response = result.toUIMessageStreamResponse();
+
+    // Clear timeout once stream starts — the consumer handles cleanup
+    const originalBody = response.body;
+    if (originalBody) {
+      const reader = originalBody.getReader();
+      const timedStream = new ReadableStream({
+        async start(controller) {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                clearTimeout(timeoutId);
+                controller.close();
+                break;
+              }
+              controller.enqueue(value);
+            }
+          } catch {
+            clearTimeout(timeoutId);
+            controller.error(new Error("Chat stream interrupted"));
+          }
+        },
+        cancel() {
+          clearTimeout(timeoutId);
+          abortController.abort();
+          reader.cancel();
+        },
+      });
+      return { stream: timedStream };
+    }
+
+    return { stream: response.body! };
+  } catch {
+    clearTimeout(timeoutId);
+    throw new Error("Failed to initialize chat stream");
+  }
 }
 
 type ExistingActiveStreamResolution =

@@ -1022,14 +1022,17 @@ export async function runAgentWorkflow(options: Options) {
       await persistAssistantMessage(options.chatId, pendingAssistantResponse);
     }
 
+    // Send finish + close stream BEFORE clearing activeStream.
+    // This ensures the client reads the final chunks before the reconnect
+    // logic clears the activeStreamId and returns 204.
+    await sendFinish(writable).then(() => closeStream(writable));
+    streamClosed = true;
     await Promise.all([
       clearActiveStream(options.chatId, workflowRunId),
-      sendFinish(writable).then(() => closeStream(writable)),
       ...(sandboxState && shouldRefreshCachedDiff
         ? [refreshDiffCache(options.sessionId, sandboxState)]
         : []),
     ]);
-    streamClosed = true;
 
     workflowStatus = wasAborted
       ? "aborted"
@@ -1100,13 +1103,11 @@ export async function runAgentWorkflow(options: Options) {
     }
   } finally {
     try {
-      // On unexpected errors, still clear the active stream and close
-      // so the chat is never permanently marked as streaming.
+      // On unexpected errors, send finish + close stream first,
+      // THEN clear the active stream so the client gets the error.
       if (!streamClosed) {
-        await Promise.all([
-          clearActiveStream(options.chatId, workflowRunId),
-          sendFinish(writable).then(() => closeStream(writable)),
-        ]);
+        await sendFinish(writable).then(() => closeStream(writable));
+        await clearActiveStream(options.chatId, workflowRunId);
       }
     } finally {
       const runFinishedAt = new Date();
@@ -1155,6 +1156,13 @@ const runAgentStep = async (
 
   const abortController = new AbortController();
   const stopMonitor = startStopMonitor(workflowRunId, abortController);
+
+  // Hard timeout: abort the step if it takes > 3 minutes
+  // Prevents "stuck thinking" when model/gateway hangs
+  const HARD_STEP_TIMEOUT_MS = 180_000;
+  const hardTimeout = setTimeout(() => {
+    abortController.abort();
+  }, HARD_STEP_TIMEOUT_MS);
 
   try {
     let responseMessage: WebAgentUIMessage | undefined;
@@ -1397,6 +1405,7 @@ const runAgentStep = async (
     });
     throw errorWithStepTiming;
   } finally {
+    clearTimeout(hardTimeout);
     stopMonitor.stop();
     await stopMonitor.done;
   }

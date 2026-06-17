@@ -107,7 +107,19 @@ export async function kickSandboxProvisioningWorkflow(
   return { status: "skipped" };
 }
 
-export async function waitForSandboxProvisioningRun(runId: string) {
+const SANDBOX_PROVISIONING_TIMEOUT_MS = 90_000; // 90 seconds
+
+export async function waitForSandboxProvisioningRun(
+  runId: string,
+): Promise<unknown> {
   const run = getRun(runId);
-  return run.returnValue;
+
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(new Error(`Sandbox provisioning timed out after ${SANDBOX_PROVISIONING_TIMEOUT_MS / 1000}s (runId: ${runId})`)),
+      SANDBOX_PROVISIONING_TIMEOUT_MS,
+    ),
+  );
+
+  return Promise.race([run.returnValue, timeout]);
 }
