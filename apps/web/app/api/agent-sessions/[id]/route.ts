@@ -80,11 +80,12 @@ export async function PATCH(
       durationMs: body.durationMs,
     });
 
-    // Phase 24: Emit webhook to Neptune Chat on status changes
+    // Phase 28: Emit webhook to Neptune Chat on status changes with event ID
     if (body.status) {
       emitSessionWebhook({
         sessionId: id,
         status: body.status,
+        eventId: `evt-${id.slice(0, 8)}-${Date.now()}-${body.status}`,
         result: body.result,
         error: body.error,
         progress: body.progress,
