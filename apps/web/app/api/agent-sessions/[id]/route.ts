@@ -14,6 +14,7 @@ import {
   validateProgrammaticAuth,
 } from "@/lib/session-store";
 import { auth } from "@/lib/auth/config";
+import { emitSessionWebhook } from "@open-agents/shared/lib/webhook-emitter";
 
 async function isAuthorized(req: NextRequest): Promise<boolean> {
   if (validateProgrammaticAuth(req)) return true;
@@ -78,6 +79,19 @@ export async function PATCH(
       sandboxId: body.sandboxId,
       durationMs: body.durationMs,
     });
+
+    // Phase 24: Emit webhook to Neptune Chat on status changes
+    if (body.status) {
+      emitSessionWebhook({
+        sessionId: id,
+        status: body.status,
+        result: body.result,
+        error: body.error,
+        progress: body.progress,
+        prUrl: body.prUrl,
+        deployUrl: body.deployUrl,
+      });
+    }
 
     if (!updated) {
       return NextResponse.json(

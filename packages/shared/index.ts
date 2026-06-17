@@ -49,3 +49,6 @@ export {
   type ToolRenderState,
   toRelativePath,
 } from "./lib/tool-state";
+
+// Lib - Webhook emitter (Phase 24)
+export { emitSessionWebhook } from "./lib/webhook-emitter";
