@@ -92,6 +92,10 @@ import {
   type CheckpointSnapshot,
 } from "@/lib/agent/session-checkpoint";
 import { Supervisor } from "@/lib/agent/supervisor";
+import {
+  AutoContinueEngine,
+  spawnAutoContinueSession,
+} from "@/lib/agent/auto-continue";
 import { saveSessionCheckpoint } from "@/lib/session-store";
 
 type AuthSessionContext = Pick<AuthSession, "authProvider" | "user"> | null;
@@ -742,6 +746,8 @@ export async function runAgentWorkflow(options: Options) {
   let checkpoint: SessionCheckpoint | null = null;
   // Phase 3: Supervisor for plan-execute-verify-recover pattern
   let supervisor: Supervisor | null = null;
+  // Phase 4: Auto-continue engine
+  let autoContinueEngine: AutoContinueEngine | null = null;
 
   try {
     const [, runtime, modelRuntime, modelMessages] = await Promise.all([
@@ -847,6 +853,9 @@ export async function runAgentWorkflow(options: Options) {
         estimatedCalls: options.maxSteps ?? 500,
       },
     ]);
+
+    // Phase 4: Initialize auto-continue engine
+    autoContinueEngine = new AutoContinueEngine(options.sessionId);
 
     for (
       let step = 0;
@@ -1016,6 +1025,89 @@ export async function runAgentWorkflow(options: Options) {
 
       if (!shouldContinue) {
         break;
+      }
+
+      // Phase 4: Auto-continue check — before we hit maxSteps exhaustion
+      if (
+        autoContinueEngine &&
+        checkpoint &&
+        supervisor &&
+        options.maxSteps !== undefined &&
+        step + 1 >= options.maxSteps * 0.8
+      ) {
+        if (
+          autoContinueEngine.shouldAutoContinue(
+            checkpoint,
+            supervisor,
+            options.maxSteps,
+          )
+        ) {
+          const ctx = autoContinueEngine.serializeContext(
+            checkpoint,
+            supervisor,
+          );
+          const continuationGoal =
+            autoContinueEngine.buildContinuationGoal(ctx);
+
+          // Force final checkpoint before handoff
+          checkpoint.forceCheckpoint();
+
+          // Spawn child session
+          const child = await spawnAutoContinueSession(
+            ctx,
+            continuationGoal,
+            {
+              chatId: options.chatId,
+              userId: options.userId,
+              modelId,
+              autoCommitEnabled:
+                options.autoCommitEnabled ??
+                modelRuntime.autoCommitEnabled,
+              autoCreatePrEnabled:
+                options.autoCreatePrEnabled ??
+                modelRuntime.autoCreatePrEnabled,
+            },
+          );
+
+          if (child) {
+            // Build notification for admin/UI
+            const notification = autoContinueEngine.buildNotification(
+              ctx,
+              child.childSessionId,
+            );
+
+            console.log(
+              `[auto-continue] Session ${options.sessionId} → ${child.childSessionId} (depth ${notification.depth})`,
+            );
+
+            // Mark parent as having auto-continued
+            checkpoint.markAutoContinued();
+
+            // Include auto-continue info in the response message
+            const autoContinueNote =
+              `\n\n---\n🔄 **Auto-continue**: This session continues in a new session. ` +
+              `Progress: ${ctx.toolCallCount} tool calls, ` +
+              `${ctx.supervisorSummary}`;
+
+            pendingAssistantResponse = {
+              ...pendingAssistantResponse,
+              parts: [
+                ...pendingAssistantResponse.parts,
+                {
+                  type: "text" as const,
+                  text: autoContinueNote,
+                },
+              ],
+            };
+
+            // Break the loop — parent session gracefully yields
+            break;
+          } else {
+            console.warn(
+              "[auto-continue] Failed to spawn child — continuing in current session",
+            );
+          }
+        }
       }
 
       if (options.maxSteps !== undefined && step + 1 >= options.maxSteps) {
