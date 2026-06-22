@@ -12,6 +12,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // users
 export const users = pgTable("users", {
@@ -342,10 +343,17 @@ export const agentSessions = pgTable(
     completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    // Phase 2: Durability checkpoint columns
+    checkpointJson: jsonb("checkpoint_json"),
+    parentSessionId: text("parent_session_id"),
+    checkpointCount: integer("checkpoint_count").notNull().default(0),
   },
   (table) => [
     index("agent_sessions_status_idx").on(table.status),
     index("agent_sessions_created_at_idx").on(table.createdAt),
+    index("agent_sessions_parent_idx")
+      .on(table.parentSessionId)
+      .where(sql`${table.parentSessionId} IS NOT NULL`),
   ],
 );
 

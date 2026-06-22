@@ -87,6 +87,11 @@ import type {
 } from "@/lib/db/workflow-runs";
 import { resolveChatModelSelection } from "../api/chat/_lib/model-selection";
 import { resolveChatSandboxRuntime } from "./chat-sandbox-runtime";
+import {
+  SessionCheckpoint,
+  type CheckpointSnapshot,
+} from "@/lib/agent/session-checkpoint";
+import { saveSessionCheckpoint } from "@/lib/session-store";
 
 type AuthSessionContext = Pick<AuthSession, "authProvider" | "user"> | null;
 
@@ -732,6 +737,8 @@ export async function runAgentWorkflow(options: Options) {
   let caughtError: unknown;
   let sandboxState: OpenAgentCallOptions["sandbox"]["state"] | undefined;
   let shouldRefreshCachedDiff = false;
+  // Phase 2: Checkpoint state (declared here so accessible in catch)
+  let checkpoint: SessionCheckpoint | null = null;
 
   try {
     const [, runtime, modelRuntime, modelMessages] = await Promise.all([
@@ -801,6 +808,21 @@ export async function runAgentWorkflow(options: Options) {
       sessionId: options.sessionId,
     });
 
+    // Phase 2: Initialize session checkpoint state
+    checkpoint = new SessionCheckpoint(options.sessionId, {
+      goal: runtime.sessionTitle || options.chatId,
+      model: modelId,
+    });
+
+    // Phase 2: Persist initial checkpoint state to Postgres
+    saveSessionCheckpoint(options.sessionId, {
+      checkpointJson: checkpoint.getState() as unknown as Record<string, unknown>,
+      checkpointCount: 0,
+      status: "running",
+    }).catch((err) =>
+      console.warn("[checkpoint] Failed to save initial checkpoint:", err),
+    );
+
     for (
       let step = 0;
       options.maxSteps === undefined || step < options.maxSteps;
@@ -846,6 +868,55 @@ export async function runAgentWorkflow(options: Options) {
           : result.stepUsage;
       }
 
+      // Phase 2: Track tool calls and text for checkpoint state
+      if (pendingAssistantResponse.parts) {
+        for (const part of pendingAssistantResponse.parts) {
+          if (part.type === "text") {
+            checkpoint.onTextDelta(
+              "text" in part && typeof part.text === "string"
+                ? part.text
+                : "",
+            );
+          }
+          // Track tool-use parts (tool-{name} types)
+          if (part.type.startsWith("tool-") && "toolName" in part) {
+            const toolName =
+              "toolName" in part && typeof part.toolName === "string"
+                ? part.toolName
+                : part.type.replace("tool-", "");
+            const toolInput =
+              "input" in part && typeof part.input === "object"
+                ? (part.input as Record<string, unknown>)
+                : {};
+            const target =
+              (toolInput?.file_path as string) ??
+              (toolInput?.path as string) ??
+              (toolInput?.command as string)?.slice(0, 80) ??
+              "";
+            const reason =
+              (toolInput?.description as string) ??
+              (toolInput?.reason as string) ??
+              "";
+            checkpoint.onToolUse(toolName, target, reason);
+          }
+          // Track tool errors from output-error state
+          if (
+            part.type.startsWith("tool-") &&
+            "state" in part &&
+            part.state === "output-error" &&
+            "errorText" in part
+          ) {
+            checkpoint.onToolResult(
+              true,
+              typeof part.errorText === "string"
+                ? part.errorText
+                : "Tool error",
+            );
+          }
+        }
+      }
+      checkpoint.onTurnComplete();
+
       const shouldContinue =
         result.finishReason === "tool-calls" &&
         !shouldPauseForToolInteraction(
@@ -874,6 +945,19 @@ export async function runAgentWorkflow(options: Options) {
           totalMessageUsage: totalUsage,
         },
       };
+    }
+
+    // Phase 2: Force final checkpoint before persisting
+    try {
+      const finalCp = checkpoint.forceCheckpoint();
+      await saveSessionCheckpoint(options.sessionId, {
+        checkpointJson: checkpoint.getState() as unknown as Record<string, unknown>,
+        checkpointCount: finalCp.n,
+        status: wasAborted ? "aborted" : exhaustedMaxSteps ? "failed" : "completed",
+        accumulatedTextPreview: finalCp.summary,
+      });
+    } catch (cpErr) {
+      console.warn("[checkpoint] Failed to save final checkpoint:", cpErr);
     }
 
     // Persist completed model output before post-finish work so it is not lost
@@ -1057,8 +1141,21 @@ export async function runAgentWorkflow(options: Options) {
     workflowStatus = wasAborted ? "aborted" : "failed";
     caughtError = error;
 
-    // U2.5A.1: Notify Slack on error
+    // Phase 2: Save error checkpoint before cleanup
     const errorMessage = error instanceof Error ? error.message : String(error);
+    if (checkpoint) {
+      checkpoint.onError(errorMessage);
+      saveSessionCheckpoint(options.sessionId, {
+        checkpointJson: checkpoint.getState() as unknown as Record<string, unknown>,
+        checkpointCount: checkpoint.getState().checkpoints.length,
+        status: "failed",
+        error: errorMessage,
+      }).catch((cpErr) =>
+        console.warn("[checkpoint] Failed to save error checkpoint:", cpErr),
+      );
+    }
+
+    // U2.5A.1: Notify Slack on error
     notifySlackError({
       sessionId: options.sessionId,
       error: errorMessage,
