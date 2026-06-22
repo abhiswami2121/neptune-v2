@@ -97,6 +97,7 @@ import {
   spawnAutoContinueSession,
 } from "@/lib/agent/auto-continue";
 import { saveSessionCheckpoint } from "@/lib/session-store";
+import { DURABLE_STEP_TIMEOUT_MS } from "./chat-continue";
 
 type AuthSessionContext = Pick<AuthSession, "authProvider" | "user"> | null;
 
@@ -1437,9 +1438,10 @@ const runAgentStep = async (
   const abortController = new AbortController();
   const stopMonitor = startStopMonitor(workflowRunId, abortController);
 
-  // Hard timeout: abort the step if it takes > 3 minutes
-  // Prevents "stuck thinking" when model/gateway hangs
-  const HARD_STEP_TIMEOUT_MS = 180_000;
+  // Phase 5: Durable step timeout — extended for long-running workflow tasks.
+  // Previously 180s; now 600s to survive heavy builds/tests in durable missions.
+  // The workflow SDK handles Vercel function timeouts via automatic checkpointing.
+  const HARD_STEP_TIMEOUT_MS = DURABLE_STEP_TIMEOUT_MS;
   const hardTimeout = setTimeout(() => {
     abortController.abort();
   }, HARD_STEP_TIMEOUT_MS);
