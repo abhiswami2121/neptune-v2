@@ -390,6 +390,68 @@ When building features or fixing complex issues, follow this structured cycle:
 Not every task needs all 7 phases. Simple fixes may only need Grill → Research → Build → QA. Complex features should follow the full cycle. The cycle is a GUIDANCE framework, not a straitjacket — adapt to the task.`;
 
 // ---------------------------------------------------------------------------
+// Efficiency Protocol (V2 — M-VPS-AGENT-V1A Layer 1, June 22, 2026)
+// 5 mandatory sections: reduce exploration overkill, deduplicate reads,
+// enforce multi-variant testing, budget discipline, and exploration caps.
+// ---------------------------------------------------------------------------
+
+const EFFICIENCY_PROTOCOL_V2 = `
+# Efficiency Protocol
+
+Before exploring an unfamiliar codebase area:
+1. Check if a relevant skill exists — invoke it first; skills encode known patterns and architecture
+2. Search for existing patterns with \`grep\` before walking the directory tree
+3. If the project has AGENTS.md, CLAUDE.md, or ARCHITECTURE.md, read it first (one file, not a tree walk)
+4. Only explore files NOT covered by the existing skill, documentation, or pattern search
+5. If exploration exceeds 10 reads/searches without producing a concrete action, stop and re-evaluate
+
+**Principle:** A skill or architecture doc answers structural questions in 1-2 calls that would otherwise take 20+ exploratory reads.`;
+
+const FILE_READ_DEDUPLICATION_V2 = `
+# File Read Deduplication
+
+- Track files you have already read in this session mentally
+- Before reading a file, verify you have not already read it and that it has not been modified since
+- If the file was changed by a prior edit in this session, re-reading is appropriate
+- When referencing a previously read file, cite it from memory — do not re-read
+- If you only need a specific section, use offset/limit to read that section instead of the whole file
+
+**Principle:** Each redundant re-read burns tokens without adding information. Average missions with >30% redundant reads score one letter grade lower.`;
+
+const MULTI_VARIANT_TESTING_V2 = `
+# Multi-Variant Testing
+
+For any API endpoint, handler, or component with multiple modes or branches:
+1. **List all modes before implementing** — identify every conditional path (query params, auth states, error states, request body variants)
+2. **Test each mode individually** before declaring work complete
+3. **Cover at minimum:** success (200), validation error (400), auth error (401/403), not found (404)
+4. **Never claim done** if only 1 of N modes has been tested — fixing "new_project" mode while leaving "investigation" mode broken is a detected failure pattern
+
+**Principle:** Single-mode fixes create production bugs in the untested branches. If modes_tested < total_modes, the task is not complete.`;
+
+const BUDGET_DISCIPLINE_V2 = `
+# Budget Discipline
+
+Your mission budget is stated in the task. Track your usage:
+- If you have used less than 50% of your budget and are considering completion, verify: are ALL acceptance criteria met? Are ALL modes tested? Do typecheck, lint, build, and tests pass?
+- If any check fails, continue work — you have budget remaining
+- If all checks pass, explicitly state "Done early because all criteria verified" before concluding
+- Never synthesize completion at low budget usage without explicit justification
+
+**Principle:** Low budget utilization with incomplete work is the #1 signature of premature completion. Always verify before declaring done.`;
+
+const EXPLORATION_BUDGET_V2 = `
+# Exploration Budget
+
+For any major task phase, limit exploration to 30% of the phase's tool calls:
+- **Exploration** = reading files, searching code, loading documentation
+- **Implementation + Verification** = writing code, running builds, deploying, testing
+- If you have made 10+ read/search calls without a write, edit, or build, stop and ask: "Is there a skill, AGENTS.md, or architecture doc that would answer these structural questions faster?"
+- Switch to implementation immediately once you understand the pattern
+
+**Principle:** Exploration paralysis burns budget without progress. A skill or architecture doc replaces 20+ exploratory reads.`;
+
+// ---------------------------------------------------------------------------
 // Cloud sandbox instructions
 // ---------------------------------------------------------------------------
 
@@ -489,6 +551,11 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     CORE_SYSTEM_PROMPT,
     getModelOverlay(family, options.modelId),
     DURABILITY_INSTRUCTIONS,
+    EFFICIENCY_PROTOCOL_V2,
+    FILE_READ_DEDUPLICATION_V2,
+    MULTI_VARIANT_TESTING_V2,
+    BUDGET_DISCIPLINE_V2,
+    EXPLORATION_BUDGET_V2,
   ];
 
   if (options.cwd) {
