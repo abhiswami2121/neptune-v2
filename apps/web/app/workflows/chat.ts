@@ -91,6 +91,7 @@ import {
   SessionCheckpoint,
   type CheckpointSnapshot,
 } from "@/lib/agent/session-checkpoint";
+import { Supervisor } from "@/lib/agent/supervisor";
 import { saveSessionCheckpoint } from "@/lib/session-store";
 
 type AuthSessionContext = Pick<AuthSession, "authProvider" | "user"> | null;
@@ -739,6 +740,8 @@ export async function runAgentWorkflow(options: Options) {
   let shouldRefreshCachedDiff = false;
   // Phase 2: Checkpoint state (declared here so accessible in catch)
   let checkpoint: SessionCheckpoint | null = null;
+  // Phase 3: Supervisor for plan-execute-verify-recover pattern
+  let supervisor: Supervisor | null = null;
 
   try {
     const [, runtime, modelRuntime, modelMessages] = await Promise.all([
@@ -823,12 +826,42 @@ export async function runAgentWorkflow(options: Options) {
       console.warn("[checkpoint] Failed to save initial checkpoint:", err),
     );
 
+    // Phase 3: Initialize supervisor for plan-execute-verify-recover
+    supervisor = new Supervisor(
+      options.sessionId,
+      runtime.sessionTitle || options.chatId,
+      checkpoint,
+    );
+
+    // Register a default plan — single subtask wrapping the goal
+    // Long missions can decompose into multiple subtasks via agent
+    supervisor.registerPlan([
+      {
+        description: runtime.sessionTitle || "Complete the user's request",
+        acceptanceCriteria: [
+          "All user-requested changes are implemented",
+          "TypeScript compiles without errors",
+          "Tests pass if applicable",
+          "No incomplete work",
+        ],
+        estimatedCalls: options.maxSteps ?? 500,
+      },
+    ]);
+
     for (
       let step = 0;
       options.maxSteps === undefined || step < options.maxSteps;
       step++
     ) {
       let result: Awaited<ReturnType<typeof runAgentStep>>;
+
+      // Phase 3: Supervisor — get next subtask and start it
+      if (supervisor && !supervisor.isDone()) {
+        const nextSubtask = supervisor.getNextSubtask();
+        if (nextSubtask) {
+          supervisor.startSubtask(nextSubtask.id);
+        }
+      }
 
       try {
         result = await runAgentStep(
@@ -917,11 +950,69 @@ export async function runAgentWorkflow(options: Options) {
       }
       checkpoint.onTurnComplete();
 
+      // Phase 3: Supervisor verification after each step
+      let supervisorWantsRetry = false;
+      if (supervisor && !supervisor.isDone()) {
+        // Verify: when step finishes (not tool-calls), check acceptance criteria
+        if (
+          result.finishReason !== "tool-calls" ||
+          result.stepWasAborted
+        ) {
+          const plan = supervisor.getPlan();
+          const inProgressSubtask = plan.subtasks.find(
+            (s) => s.status === "in_progress",
+          );
+          if (inProgressSubtask) {
+            const verification = supervisor.verifySubtask(inProgressSubtask.id);
+            if (verification.passed) {
+              supervisor.completeSubtask(inProgressSubtask.id);
+            } else if (result.stepWasAborted) {
+              // Recovery: attempt retry
+              const retryNum = supervisor.attemptRecovery(
+                inProgressSubtask.id,
+                result.finishReason ?? "aborted",
+              );
+              if (retryNum > 0) {
+                // Retry possible — keep the loop going
+                supervisorWantsRetry = true;
+              } else {
+                // Exhausted — escalate and re-plan
+                const escalationCtx =
+                  supervisor.buildEscalationContext(inProgressSubtask.id);
+                console.warn(
+                  `[supervisor] ESCALATION:\n${escalationCtx}`,
+                );
+                supervisor.replanAfterFailure(
+                  inProgressSubtask.id,
+                  "Retry with fresh context and reduced scope",
+                );
+                // Recovery subtask was added — keep going
+                supervisorWantsRetry = true;
+              }
+            } else {
+              // Verification issues — log, complete anyway (don't block)
+              console.warn(
+                `[supervisor] Verification issues for ${inProgressSubtask.id}:`,
+                verification.reasons,
+              );
+              supervisor.completeSubtask(inProgressSubtask.id);
+            }
+          }
+        }
+      }
+
+      // Check if supervisor has more work (recovery subtask or next pending)
+      if (supervisor && !supervisor.isDone() && !supervisorWantsRetry) {
+        const nextCheck = supervisor.getNextSubtask();
+        supervisorWantsRetry = nextCheck !== null;
+      }
+
       const shouldContinue =
-        result.finishReason === "tool-calls" &&
-        !shouldPauseForToolInteraction(
-          result.responseMessage?.parts ?? pendingAssistantResponse.parts,
-        );
+        supervisorWantsRetry ||
+        (result.finishReason === "tool-calls" &&
+          !shouldPauseForToolInteraction(
+            result.responseMessage?.parts ?? pendingAssistantResponse.parts,
+          ));
 
       if (!shouldContinue) {
         break;
