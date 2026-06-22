@@ -122,7 +122,7 @@ export async function listAgentSessions(
 
 export async function updateAgentSession(
   id: string,
-  updates: Partial<Pick<AgentSession, "status" | "goal" | "model" | "repo" | "branch" | "prUrl" | "deployUrl" | "error" | "sandboxId" | "durationMs" | "completedAt">>,
+  updates: Partial<Pick<AgentSession, "status" | "goal" | "model" | "repo" | "branch" | "prUrl" | "deployUrl" | "error" | "sandboxId" | "durationMs" | "completedAt" | "checkpointJson" | "parentSessionId" | "checkpointCount">>,
 ): Promise<AgentSession | null> {
   const now = new Date();
 
@@ -144,6 +144,115 @@ export async function updateAgentSession(
     .returning();
 
   return (rows[0] as AgentSession) || null;
+}
+
+// ── Checkpoint Persistence (Phase 2) ───────────────────────────────────────
+
+/**
+ * Save a full checkpoint snapshot to the agent_sessions row.
+ * Updates checkpoint_json, checkpoint_count, and status if transitioning.
+ */
+export async function saveSessionCheckpoint(
+  id: string,
+  checkpoint: {
+    checkpointJson: Record<string, unknown>;
+    checkpointCount: number;
+    status?: AgentSessionStatus;
+    accumulatedTextPreview?: string;
+    error?: string;
+  },
+): Promise<void> {
+  const now = new Date();
+  const patch: Record<string, unknown> = {
+    checkpointJson: JSON.stringify(checkpoint.checkpointJson),
+    checkpointCount: checkpoint.checkpointCount,
+    updatedAt: now,
+  };
+
+  if (checkpoint.status) {
+    patch.status = checkpoint.status;
+  }
+
+  if (checkpoint.error !== undefined) {
+    patch.error = checkpoint.error;
+  }
+
+  try {
+    await db
+      .update(agentSessions)
+      .set(patch as any)
+      .where(eq(agentSessions.id, id));
+  } catch (err) {
+    console.error(
+      `[session-store] Failed to save checkpoint for ${id.slice(0, 12)}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
+/**
+ * Load the latest checkpoint state for a session.
+ * Returns null if no checkpoint has been saved.
+ */
+export async function loadSessionCheckpoint(
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const rows = await db
+      .select({
+        checkpointJson: agentSessions.checkpointJson,
+        checkpointCount: agentSessions.checkpointCount,
+        parentSessionId: agentSessions.parentSessionId,
+        status: agentSessions.status,
+      })
+      .from(agentSessions)
+      .where(eq(agentSessions.id, id))
+      .limit(1);
+
+    const row = rows[0];
+    if (!row?.checkpointJson) return null;
+
+    const parsed =
+      typeof row.checkpointJson === "string"
+        ? JSON.parse(row.checkpointJson)
+        : row.checkpointJson;
+
+    return {
+      ...(parsed as Record<string, unknown>),
+      checkpointCount: row.checkpointCount,
+      parentSessionId: row.parentSessionId,
+      status: row.status,
+    };
+  } catch (err) {
+    console.error(
+      `[session-store] Failed to load checkpoint for ${id.slice(0, 12)}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return null;
+  }
+}
+
+/**
+ * Link a session to its parent (for auto-continue chains).
+ */
+export async function linkSessionToParent(
+  childId: string,
+  parentId: string,
+): Promise<void> {
+  try {
+    await db
+      .update(agentSessions)
+      .set({
+        parentSessionId: parentId,
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(agentSessions.id, childId));
+  } catch (err) {
+    console.error(
+      `[session-store] Failed to link ${childId.slice(0, 12)} → ${parentId.slice(0, 12)}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 }
 
 // ── Event Streaming (Redis-backed) ─────────────────────────────────────────
