@@ -7,7 +7,7 @@ export {
   getTierInfo,
   resolveAutoModel,
 } from "./agents/auto-agent";
-export { type GatewayConfig, type GatewayOptions, gateway } from "./models";
+export { type GatewayConfig, type GatewayOptions, type GatewayModelId, type LanguageModel, gateway, modelWithFallback, isFallbackEligible, getFallbackModelId, MODEL_FALLBACK_MAP } from "./models";
 export type {
   AgentModelSelection,
   AgentSandboxContext,
