@@ -5,6 +5,7 @@ import { addCacheControl } from "./context-management";
 import {
   type GatewayModelId,
   gateway,
+  modelWithFallback,
   type ProviderOptionsByProvider,
 } from "./models";
 import {
@@ -55,7 +56,7 @@ const callOptionsSchema = z.object({
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
 
-export const defaultModelLabel = "deepseek/deepseek-v4-flash" as const;
+export const defaultModelLabel = "zai/glm-5.2" as const;
 export const defaultModel = gateway(defaultModelLabel);
 
 function normalizeAgentModelSelection(
@@ -132,11 +133,19 @@ export const openAgent = new ToolLoopAgent({
       ? normalizeAgentModelSelection(options.subagentModel, defaultModelLabel)
       : undefined;
 
-    const callModel = gateway(mainSelection.id, {
-      providerOptionsOverrides: mainSelection.providerOptionsOverrides,
-    });
+    const callModel = modelWithFallback(
+      mainSelection.id,
+      {
+        providerOptionsOverrides: mainSelection.providerOptionsOverrides,
+      },
+      (primaryId, fallbackId, error) => {
+        console.warn(
+          `[open-agent fallback] ${primaryId} → ${fallbackId}: ${error instanceof Error ? error.message.slice(0, 120) : String(error)}`,
+        );
+      },
+    );
     const subagentModel = subagentSelection
-      ? gateway(subagentSelection.id, {
+      ? modelWithFallback(subagentSelection.id, {
           providerOptionsOverrides: subagentSelection.providerOptionsOverrides,
         })
       : undefined;
