@@ -325,7 +325,7 @@ export const agentSessions = pgTable(
     goal: text("goal"),
     model: text("model"),
     status: text("status", {
-      enum: ["started", "running", "completed", "failed", "aborted"],
+      enum: ["started", "running", "completed", "failed", "aborted", "stalled"],
     })
       .notNull()
       .default("started"),

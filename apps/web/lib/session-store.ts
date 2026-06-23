@@ -17,7 +17,7 @@ import type { Redis } from "ioredis";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export type AgentSessionStatus = "started" | "running" | "completed" | "failed" | "aborted";
+export type AgentSessionStatus = "started" | "running" | "completed" | "failed" | "aborted" | "stalled";
 
 export interface AgentSessionEvent {
   type: string;
@@ -372,6 +372,152 @@ export async function* generateSSEStream(
 
   // Timeout after ~3 minutes of empty polls
   yield `data: ${JSON.stringify({ type: "timeout", message: "Stream timed out — no new events for 180s" })}\n\n`;
+}
+
+// ── Session Lifecycle Watchdog (Phase 3) ────────────────────────────────────
+
+const STALLED_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes in "started" → "stalled"
+const FAILED_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes in "stalled" → "failed"
+
+export interface StaleSessionTransition {
+  id: string;
+  from: AgentSessionStatus;
+  to: AgentSessionStatus;
+  reason: string;
+}
+
+/**
+ * Detect and transition stuck sessions:
+ * - "started" for >5 minutes → "stalled" (with error reason)
+ * - "stalled" for >30 minutes → "failed"
+ *
+ * Returns the list of sessions that were transitioned.
+ */
+export async function transitionStaleSessions(): Promise<
+  StaleSessionTransition[]
+> {
+  const now = new Date();
+  const transitions: StaleSessionTransition[] = [];
+
+  // 1. Find sessions stuck in "started" for >5 minutes
+  const startedCutoff = new Date(now.getTime() - STALLED_THRESHOLD_MS);
+  const stuckStarted = await db
+    .select({ id: agentSessions.id, startedAt: agentSessions.startedAt })
+    .from(agentSessions)
+    .where(
+      sql`${agentSessions.status} = 'started' AND ${agentSessions.startedAt} < ${startedCutoff.toISOString()}`,
+    );
+
+  for (const session of stuckStarted) {
+    const duration = Math.round(
+      (now.getTime() - new Date(session.startedAt).getTime()) / 60000,
+    );
+    await db
+      .update(agentSessions)
+      .set({
+        status: "stalled",
+        error: `Session stalled: stuck in "started" for ${duration} minutes with no agent execution detected`,
+        updatedAt: now,
+      } as any)
+      .where(eq(agentSessions.id, session.id));
+
+    transitions.push({
+      id: session.id,
+      from: "started",
+      to: "stalled",
+      reason: `Stuck in "started" for ${duration}min`,
+    });
+    console.warn(
+      `[session-store] ⚠️ Stalled session ${session.id.slice(0, 12)}... (${duration}min)`,
+    );
+  }
+
+  // 2. Find sessions stuck in "stalled" for >30 minutes
+  const stalledCutoff = new Date(now.getTime() - FAILED_THRESHOLD_MS);
+  const stuckStalled = await db
+    .select({ id: agentSessions.id, startedAt: agentSessions.startedAt, updatedAt: agentSessions.updatedAt })
+    .from(agentSessions)
+    .where(
+      sql`${agentSessions.status} = 'stalled' AND ${agentSessions.updatedAt} < ${stalledCutoff.toISOString()}`,
+    );
+
+  for (const session of stuckStalled) {
+    const duration = Math.round(
+      (now.getTime() - new Date(session.startedAt).getTime()) / 60000,
+    );
+    await db
+      .update(agentSessions)
+      .set({
+        status: "failed",
+        error: `Session failed: stalled for >30min (total ${duration}min since start) — no agent execution detected`,
+        completedAt: now,
+        updatedAt: now,
+      } as any)
+      .where(eq(agentSessions.id, session.id));
+
+    transitions.push({
+      id: session.id,
+      from: "stalled",
+      to: "failed",
+      reason: `Stalled >30min (total ${duration}min)`,
+    });
+    console.error(
+      `[session-store] ❌ Failed session ${session.id.slice(0, 12)}... (${duration}min total)`,
+    );
+  }
+
+  return transitions;
+}
+
+/**
+ * Backfill all currently stuck sessions.
+ * Used during Phase 3 deployment to fix the 14 stuck sessions.
+ * Sessions stuck in "started" get marked as "failed" directly
+ * (they've been stuck much longer than 30 minutes).
+ */
+export async function backfillStuckSessions(): Promise<{
+  backfilled: number;
+  details: string[];
+}> {
+  const now = new Date();
+  const startedCutoff = new Date(now.getTime() - STALLED_THRESHOLD_MS);
+
+  const stuck = await db
+    .select({
+      id: agentSessions.id,
+      startedAt: agentSessions.startedAt,
+      status: agentSessions.status,
+    })
+    .from(agentSessions)
+    .where(
+      sql`${agentSessions.status} IN ('started', 'running') AND ${agentSessions.startedAt} < ${startedCutoff.toISOString()}`,
+    );
+
+  const details: string[] = [];
+  for (const session of stuck) {
+    const duration = Math.round(
+      (now.getTime() - new Date(session.startedAt).getTime()) / 60000,
+    );
+    await db
+      .update(agentSessions)
+      .set({
+        status: "failed",
+        error: `Session failed: was stuck in "${session.status}" for ${duration} minutes with no agent execution — backfilled during Phase 3 lifecycle fix`,
+        completedAt: now,
+        updatedAt: now,
+      } as any)
+      .where(eq(agentSessions.id, session.id));
+
+    details.push(
+      `${session.id.slice(0, 12)}... (was "${session.status}", ${duration}min)`,
+    );
+  }
+
+  console.log(
+    `[session-store] 🔧 Backfilled ${stuck.length} stuck sessions: ${details.join("; ")}`,
+  );
+
+  return { backfilled: stuck.length, details };
 }
 
 // ── Auth Helpers ───────────────────────────────────────────────────────────
