@@ -169,6 +169,35 @@ export function getProviderOptionsForModel(
   return providerOptions;
 }
 
+/** Map from primary model ID to fallback model ID (empty — gateway-primary only). */
+export const MODEL_FALLBACK_MAP: Record<string, string> = {};
+
+/**
+ * Model factory with fallback support.
+ * Currently wraps gateway() directly — fallback logic can be layered on later.
+ */
+export function modelWithFallback(
+  modelId: GatewayModelId,
+  options: GatewayOptions = {},
+  _onFallback?: (primaryId: string, fallbackId: string, error: unknown) => void,
+): LanguageModel {
+  return gateway(modelId, options);
+}
+
+/**
+ * Check if an error is eligible for model fallback (always false — no fallback configured).
+ */
+export function isFallbackEligible(_error: unknown): boolean {
+  return false;
+}
+
+/**
+ * Get the fallback model ID for a primary model (always undefined — no fallback configured).
+ */
+export function getFallbackModelId(_modelId: string): string | undefined {
+  return undefined;
+}
+
 export function gateway(
   modelId: GatewayModelId,
   options: GatewayOptions = {},
