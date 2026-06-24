@@ -6,10 +6,8 @@ type DrizzleClient = ReturnType<typeof drizzle<typeof schema>>;
 
 let _db: DrizzleClient | null = null;
 
-// Use NEPTUNE_V2_POSTGRES_URL first (canonical V2 DB), fall back to POSTGRES_URL.
-// Validate that the URL starts with "postgres" to reject placeholder values.
-const RAW_URL = process.env.NEPTUNE_V2_POSTGRES_URL || "";
-const DB_URL = RAW_URL.startsWith("postgres") ? RAW_URL : (process.env.POSTGRES_URL || "");
+// Use NEPTUNE_V2_POSTGRES_URL first (canonical V2 DB), fall back to POSTGRES_URL
+const DB_URL = process.env.NEPTUNE_V2_POSTGRES_URL || process.env.POSTGRES_URL || "";
 
 export const db = new Proxy({} as DrizzleClient, {
   get(_, prop) {
