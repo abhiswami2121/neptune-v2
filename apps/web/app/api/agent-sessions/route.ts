@@ -49,10 +49,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(session, { status: 201 });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const cause = err instanceof Error && err.cause ? ' | cause: ' + String(err.cause) : '';
-    console.error('[agent-sessions] POST error [' + msg.slice(0,200) + cause + ']', err);
+
+    // Deep Postgres error extraction (postgres-js wraps errors deeply)
+    const deep: Record<string, unknown> = {};
+    const e = err as Record<string, unknown>;
+    // Direct Postgres error properties (from postgres-js)
+    for (const k of ["code","hint","detail","position","schema","table","column","constraint","routine","severity","name","stack","query"]) {
+      if (k in e && e[k] !== undefined && e[k] !== null) deep[k] = e[k];
+    }
+    // Unwrap cause chain (postgres-js nests real DB errors under .cause)
+    let cause = (err as any)?.cause;
+    let depth = 0;
+    while (cause && depth < 5) {
+      const cobj: Record<string, unknown> = {};
+      if (typeof cause === "object" && cause !== null) {
+        for (const k of ["message","code","name","hint","detail","position","schema","table","column","constraint","routine","severity"]) {
+          if ((cause as any)[k] !== undefined && (cause as any)[k] !== null) cobj[k] = (cause as any)[k];
+        }
+      } else {
+        cobj["raw"] = String(cause);
+      }
+      if (Object.keys(cobj).length > 0) deep[`cause_${depth}`] = cobj;
+      cause = (cause as any)?.cause;
+      depth++;
+    }
+
+    console.error('[agent-sessions] POST error [' + msg.slice(0,200) + ']', JSON.stringify(deep));
     return NextResponse.json(
-      { error: "Failed to create session", detail: msg.slice(0, 1000), hint: "DB table agent_sessions may be missing — run migration 0037" },
+      {
+        error: "Failed to create session",
+        detail: msg.slice(0, 1000),
+        postgresError: deep,
+        hint: "DB table agent_sessions may be missing — run migration 0037"
+      },
       { status: 500 },
     );
   }
