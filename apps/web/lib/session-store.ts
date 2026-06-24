@@ -22,7 +22,8 @@ async function ensureAgentSessionsTable(): Promise<void> {
   try {
     // Use raw postgres client — Drizzle proxy won't route raw SQL correctly
     const pg = await import("postgres");
-    const DB_URL = process.env.NEPTUNE_V2_POSTGRES_URL || process.env.POSTGRES_URL || "";
+    const RAW_URL = process.env.NEPTUNE_V2_POSTGRES_URL || "";
+    const DB_URL = RAW_URL.startsWith("postgres") ? RAW_URL : (process.env.POSTGRES_URL || "");
     const sql_client = pg.default(DB_URL, { max: 1 });
     await sql_client.unsafe(`
       CREATE TABLE IF NOT EXISTS agent_sessions (
