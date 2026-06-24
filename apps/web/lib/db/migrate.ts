@@ -29,9 +29,9 @@ type ErrorWithCause = {
   cause?: unknown;
 };
 
-const url = process.env.NEPTUNE_V2_POSTGRES_URL || process.env.POSTGRES_URL;
+const url = process.env.POSTGRES_URL;
 if (!url) {
-  console.log("NEPTUNE_V2_POSTGRES_URL nor POSTGRES_URL set — skipping migrations");
+  console.log("POSTGRES_URL not set — skipping migrations");
   process.exit(0);
 }
 
