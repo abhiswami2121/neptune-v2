@@ -20,7 +20,10 @@ let tableEnsured = false;
 async function ensureAgentSessionsTable(): Promise<void> {
   if (tableEnsured) return;
   try {
-    await db.execute(sql`
+    // Use raw postgres client — Drizzle proxy won't route raw SQL correctly
+    const pg = await import("postgres");
+    const sql_client = pg.default(process.env.POSTGRES_URL!, { max: 1 });
+    await sql_client.unsafe(`
       CREATE TABLE IF NOT EXISTS agent_sessions (
         id text PRIMARY KEY NOT NULL,
         goal text,
@@ -45,13 +48,14 @@ async function ensureAgentSessionsTable(): Promise<void> {
         checkpoint_count integer DEFAULT 0 NOT NULL
       )
     `);
-    // Create indexes (ignored if already exist)
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS agent_sessions_status_idx ON agent_sessions (status)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS agent_sessions_created_at_idx ON agent_sessions (created_at)`);
-    console.log("[session-store] ✅ agent_sessions table ensured");
+    await sql_client.unsafe(`CREATE INDEX IF NOT EXISTS agent_sessions_status_idx ON agent_sessions (status)`);
+    await sql_client.unsafe(`CREATE INDEX IF NOT EXISTS agent_sessions_created_at_idx ON agent_sessions (created_at)`);
+    await sql_client.end();
+    console.log("[session-store] ✅ agent_sessions table ensured via raw SQL");
     tableEnsured = true;
   } catch (err) {
-    console.warn("[session-store] ⚠️ Could not ensure agent_sessions table:", (err as Error).message);
+    console.error("[session-store] ⚠️ Could not ensure agent_sessions table:", (err as Error).message);
+    throw err; // Let caller see the real error
   }
 }
 
