@@ -15,6 +15,46 @@ import { agentSessions, type AgentSession, type NewAgentSession } from "@/lib/db
 import { createRedisClient, isRedisConfigured } from "@/lib/redis";
 import type { Redis } from "ioredis";
 
+// ── Runtime table safety (M-NEPTUNE-FIXES-V2-AUDIT Phase A) ────────────────
+let tableEnsured = false;
+async function ensureAgentSessionsTable(): Promise<void> {
+  if (tableEnsured) return;
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS agent_sessions (
+        id text PRIMARY KEY NOT NULL,
+        goal text,
+        model text,
+        status text DEFAULT 'started' NOT NULL,
+        mode text DEFAULT 'sandbox',
+        repo text,
+        branch text,
+        pr_url text,
+        deploy_url text,
+        error text,
+        sandbox_id text,
+        chat_id text,
+        v2_session_id text,
+        duration_ms integer,
+        started_at timestamp DEFAULT now() NOT NULL,
+        completed_at timestamp,
+        created_at timestamp DEFAULT now() NOT NULL,
+        updated_at timestamp DEFAULT now() NOT NULL,
+        checkpoint_json jsonb,
+        parent_session_id text,
+        checkpoint_count integer DEFAULT 0 NOT NULL
+      )
+    `);
+    // Create indexes (ignored if already exist)
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS agent_sessions_status_idx ON agent_sessions (status)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS agent_sessions_created_at_idx ON agent_sessions (created_at)`);
+    console.log("[session-store] ✅ agent_sessions table ensured");
+    tableEnsured = true;
+  } catch (err) {
+    console.warn("[session-store] ⚠️ Could not ensure agent_sessions table:", (err as Error).message);
+  }
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type AgentSessionStatus = "started" | "running" | "completed" | "failed" | "aborted" | "stalled";
@@ -82,6 +122,7 @@ export async function createAgentSession(
     updatedAt: now,
   };
 
+  await ensureAgentSessionsTable();
   await db.insert(agentSessions).values(newSession);
   return newSession as unknown as AgentSession;
 }

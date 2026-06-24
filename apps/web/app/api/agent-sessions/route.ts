@@ -48,9 +48,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(session, { status: 201 });
   } catch (err) {
-    console.error("[agent-sessions] POST error:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    const cause = err instanceof Error && err.cause ? ' | cause: ' + String(err.cause) : '';
+    console.error('[agent-sessions] POST error [' + msg.slice(0,200) + cause + ']', err);
     return NextResponse.json(
-      { error: "Failed to create session" },
+      { error: "Failed to create session", detail: msg.slice(0, 300), hint: "DB table agent_sessions may be missing — run migration 0037" },
       { status: 500 },
     );
   }
