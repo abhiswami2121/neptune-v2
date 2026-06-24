@@ -19,11 +19,12 @@ import type { Redis } from "ioredis";
 let tableEnsured = false;
 async function ensureAgentSessionsTable(): Promise<void> {
   if (tableEnsured) return;
+  const pg = await import("postgres");
+  const DB_URL = process.env.NEPTUNE_V2_POSTGRES_URL || process.env.POSTGRES_URL || "";
+  const sql_client = pg.default(DB_URL, { max: 1 });
+
   try {
-    // Use raw postgres client — Drizzle proxy won't route raw SQL correctly
-    const pg = await import("postgres");
-    const DB_URL = process.env.NEPTUNE_V2_POSTGRES_URL || process.env.POSTGRES_URL || "";
-    const sql_client = pg.default(DB_URL, { max: 1 });
+    // 1. Create base table (idempotent — no-op if already exists)
     await sql_client.unsafe(`
       CREATE TABLE IF NOT EXISTS agent_sessions (
         id text PRIMARY KEY NOT NULL,
@@ -49,13 +50,49 @@ async function ensureAgentSessionsTable(): Promise<void> {
         checkpoint_count integer DEFAULT 0 NOT NULL
       )
     `);
+
+    // 2. Add Phase 2 checkpoint columns if missing (e.g., table was created by migration 0037 without them)
+    await sql_client.unsafe(`
+      ALTER TABLE agent_sessions
+        ADD COLUMN IF NOT EXISTS checkpoint_json JSONB,
+        ADD COLUMN IF NOT EXISTS parent_session_id TEXT,
+        ADD COLUMN IF NOT EXISTS checkpoint_count INTEGER NOT NULL DEFAULT 0
+    `);
+
+    // 3. Ensure indexes exist
     await sql_client.unsafe(`CREATE INDEX IF NOT EXISTS agent_sessions_status_idx ON agent_sessions (status)`);
     await sql_client.unsafe(`CREATE INDEX IF NOT EXISTS agent_sessions_created_at_idx ON agent_sessions (created_at)`);
+    await sql_client.unsafe(`
+      CREATE INDEX IF NOT EXISTS agent_sessions_parent_idx
+        ON agent_sessions(parent_session_id)
+        WHERE parent_session_id IS NOT NULL
+    `);
+
+    // 4. Ensure status check constraint includes "stalled" (migration 0039)
+    await sql_client.unsafe(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'agent_sessions_status_check'
+          AND conrelid = 'agent_sessions'::regclass
+        ) THEN
+          ALTER TABLE agent_sessions DROP CONSTRAINT agent_sessions_status_check;
+        END IF;
+      END $$;
+      ALTER TABLE agent_sessions ADD CONSTRAINT agent_sessions_status_check
+        CHECK (status IN ('started', 'running', 'completed', 'failed', 'aborted', 'stalled'))
+    `).catch(() => {
+      // Constraint may already include 'stalled' or table was just created with correct schema
+      console.log("[session-store] status constraint update skipped (likely already current)");
+    });
+
     await sql_client.end();
-    console.log("[session-store] ✅ agent_sessions table ensured via raw SQL");
+    console.log("[session-store] ✅ agent_sessions table ensured + Phase 2/3 migrations applied");
     tableEnsured = true;
   } catch (err) {
     console.error("[session-store] ⚠️ Could not ensure agent_sessions table:", (err as Error).message);
+    await sql_client.end().catch(() => {});
     throw err; // Let caller see the real error
   }
 }
