@@ -19,11 +19,52 @@ import type { Redis } from "ioredis";
 let tableEnsured = false;
 async function ensureAgentSessionsTable(): Promise<void> {
   if (tableEnsured) return;
+
+  // M-FIX-2026-06-24: Validate DB URL before attempting connection.
+  // When both NEPTUNE_V2_POSTGRES_URL and POSTGRES_URL are set differently
+  // or one is a placeholder, this ensures we use the correct one.
+  const N2_URL = process.env.NEPTUNE_V2_POSTGRES_URL;
+  const P_URL = process.env.POSTGRES_URL;
+
+  // Filter out placeholder values that aren't real Postgres URLs
+  const isPlaceholder = (url: string | undefined): boolean =>
+    !url || url.startsWith("<") || url === "undefined" || url === "null";
+
+  const DB_URL = (!isPlaceholder(N2_URL) ? N2_URL : null)
+    || (!isPlaceholder(P_URL) ? P_URL : null)
+    || "";
+
+  if (!DB_URL) {
+    const err = new Error(
+      "[session-store] No valid Postgres URL found. " +
+      `NEPTUNE_V2_POSTGRES_URL=${N2_URL ? 'set' : 'MISSING'}, ` +
+      `POSTGRES_URL=${P_URL ? 'set' : 'MISSING'}. ` +
+      "Set NEPTUNE_V2_POSTGRES_URL or POSTGRES_URL in Vercel env vars."
+    );
+    console.error(err.message);
+    throw err;
+  }
+
+  console.log(`[session-store] Connecting to DB with URL prefix: ${DB_URL.slice(0, 30)}...`);
+
   const pg = await import("postgres");
-  const DB_URL = process.env.NEPTUNE_V2_POSTGRES_URL || process.env.POSTGRES_URL || "";
-  const sql_client = pg.default(DB_URL, { max: 1 });
+  const sql_client = pg.default(DB_URL, {
+    max: 1,
+    idle_timeout: 10,
+    connect_timeout: 10,
+  });
 
   try {
+    // 0. Pre-flight: verify we can actually connect and query
+    try {
+      const ping = await sql_client.unsafe("SELECT 1 AS ok");
+      console.log("[session-store] DB ping OK:", JSON.stringify(ping));
+    } catch (pingErr) {
+      console.error("[session-store] DB ping FAILED:", (pingErr as Error).message);
+      throw new Error(
+        `Cannot reach Postgres at ${DB_URL.slice(0, 40)}... — ${(pingErr as Error).message}`
+      );
+    }
     // 1. Create base table (idempotent — no-op if already exists)
     await sql_client.unsafe(`
       CREATE TABLE IF NOT EXISTS agent_sessions (
